@@ -1,6 +1,6 @@
 "use client";
 
-import { useEffect, useMemo, useRef, useState, useSyncExternalStore } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
 import { isOverdue, formatDue, priorityLabel, type Task } from "@/lib/types";
 import type { OrgMember } from "@/lib/supabase/members-repo";
@@ -9,23 +9,6 @@ import { useDialogA11y } from "@/hooks/useDialogA11y";
 import Shell from "./Shell";
 
 const DONUT_COLORS = ["var(--low)", "var(--medium)", "var(--accent)", "var(--muted)"];
-
-// Date.now() no puede llamarse en el cuerpo del render (regla de pureza de
-// React). useSyncExternalStore es la vía sancionada para leer un valor
-// externo no determinista sin violarla — getSnapshot() no cuenta como
-// "render puro" porque React lo trata como una lectura de estado externo,
-// no como parte del cálculo del render. El snapshot del servidor es 0
-// (no hay reloj real durante SSR); React vuelve a sincronizar con el
-// valor real del cliente justo después de hidratar.
-function subscribeNever(): () => void {
-  return () => {};
-}
-function getNowSnapshot(): number {
-  return Date.now();
-}
-function getServerNowSnapshot(): number {
-  return 0;
-}
 
 function isoDaysAgo(days: number): string {
   const d = new Date();
@@ -83,7 +66,12 @@ export default function DashboardView() {
     }
   }
 
-  const now = useSyncExternalStore(subscribeNever, getNowSnapshot, getServerNowSnapshot);
+  // Snapshot de "ahora" tomado una sola vez al montar (vía inicializador
+  // perezoso de useState, que solo corre en el primer render) — antes usaba
+  // useSyncExternalStore con Date.now() como getSnapshot(), pero al no ser
+  // un valor estable entre llamadas, React detectaba "cambio" en cada
+  // render y entraba en loop infinito ("Maximum update depth exceeded").
+  const [now] = useState(() => Date.now());
 
   const metrics = useMemo(() => {
     const totalTasks = Object.keys(state.tasks).length;
