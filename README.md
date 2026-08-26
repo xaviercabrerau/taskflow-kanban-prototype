@@ -14,10 +14,11 @@ para agentes de IA (Claude Desktop, Claude Code) autenticados con tokens de
 acceso personal.
 
 El diseño completo de producto (arquitectura, RBAC, notificaciones, roadmap
-por fases, esquema de base de datos) vive en
-[`PLAN_MAESTRO_TASKFLOW.md`](../PLAN_MAESTRO_TASKFLOW.md). Este repositorio es
-el prototipo funcional de esa visión: ya no persiste en `localStorage`, sino
-en Supabase, con autenticación, multitenancy y RLS reales.
+por fases, esquema de base de datos) vive en `PLAN_MAESTRO_TASKFLOW.md`, un
+documento que **no forma parte de este repositorio** (vive en la carpeta
+local `~/Claude/`, fuera de git, junto a otros proyectos). Este repositorio
+es el prototipo funcional de esa visión: ya no persiste en `localStorage`,
+sino en Supabase, con autenticación, multitenancy y RLS reales.
 
 Es una aplicación real pero en etapa temprana: hoy funciona con un puñado de
 cuentas de prueba/piloto, no con tráfico de producción a escala.
@@ -80,22 +81,21 @@ supabase/migrations/   # Historial versionado de cambios de esquema
 OBSERVABILITY.md       # Estado real de monitoreo/alertas
 ```
 
-## CI/CD y despliegue
+## Repositorio
 
-El pipeline de GitHub Actions (`.github/workflows/ci.yml`, en la raíz del
-monorepo) se dispara solo cuando cambian archivos dentro de
-`taskflow-kanban-prototype/**`:
+TaskFlow es, desde 2026-08-26, su **propio repositorio git independiente**
+(`github.com/xaviercabrerau/taskflow-kanban-prototype`), separado del resto
+de proyectos que viven en la misma carpeta local (`~/Claude/`). Antes vivía
+mezclado con el historial de otros proyectos dentro de un monorepo cuyo
+`.git` raíz se perdió por agotamiento de espacio en disco; el historial de
+este repo se reinició en el commit `a5c583f` (2026-08-26) a partir del
+estado íntegro y verificado del working tree en ese momento — no contiene
+commits previos a esa fecha. No existe actualmente un pipeline de CI
+(`.github/workflows/`) en este repositorio; type-check, lint y tests se
+corren manualmente (ver scripts abajo) antes de cada push.
 
-- **En cada pull request:** type-check (`tsc --noEmit`), lint (`eslint`) y
-  build (`next build`).
-- **En cada push a `main`:** repite esos mismos checks y, si pasan, ejecuta
-  `supabase db push` contra el proyecto remoto (`txdyijyswpsalqnwfopc`) para
-  aplicar cualquier migración nueva.
-
-Vercel despliega automáticamente desde la rama `main` del repositorio
-`github.com/xaviercabrerau/taskflow-kanban-prototype` mediante su integración
-nativa con GitHub — no hay un paso explícito de despliegue en el workflow de
-CI, que actúa únicamente como gate de calidad.
+Vercel despliega automáticamente desde la rama `main` de ese repositorio
+mediante su integración nativa con GitHub.
 
 ## Migraciones de base de datos
 
@@ -134,12 +134,26 @@ partir de ahora:
    políticas RLS existentes, etc.). Cualquier `CREATE`, `ALTER`, `DROP` u
    otro cambio estructural debe pasar siempre por una migración versionada.
 
+## Estado reciente (2026-08-26)
+
+- Se corrigió un crash de `/dashboard` ("Maximum update depth exceeded"):
+  `useSyncExternalStore` leía `Date.now()` como snapshot, un valor nunca
+  estable entre llamadas, provocando un loop infinito de renders. Ver
+  [`src/components/DashboardView.tsx`](./src/components/DashboardView.tsx).
+- Se eliminaron 14 archivos (`src/app/api/analytics/`, `src/app/api/cron/`,
+  `src/jobs/`, `src/dashboards/`, `src/lib/logger.ts`) que resultaron ser de
+  un sistema de analítica de ventas/inventario ajeno a TaskFlow, mezclado en
+  este directorio por el incidente de monorepo descrito arriba. Ninguno
+  compilaba ni tenía referencias desde código legítimo de TaskFlow.
+- `tsc --noEmit`, `eslint` y la suite de Jest (285/285 tests) están en
+  verde.
+
 ## Más información
 
 - [`OBSERVABILITY.md`](./OBSERVABILITY.md) — detalle exacto de qué monitoreo
   y alertas están activos hoy y qué le falta a cada pieza (Sentry, Upstash,
   cron de alertas).
-- [`PLAN_PRODUCCION_TASKFLOW.md`](../PLAN_PRODUCCION_TASKFLOW.md) — estado de
-  preparación para producción.
+- `PLAN_PRODUCCION_TASKFLOW.md` — estado de preparación para producción
+  (documento externo a este repo, en `~/Claude/`).
 - [`TERMS_OF_SERVICE.md`](./TERMS_OF_SERVICE.md) y
   [`PRIVACY_POLICY.md`](./PRIVACY_POLICY.md) — estado legal del producto.
