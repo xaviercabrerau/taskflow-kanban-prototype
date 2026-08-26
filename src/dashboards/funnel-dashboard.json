@@ -1,0 +1,464 @@
+{
+  "annotations": {
+    "list": [
+      {
+        "builtIn": 1,
+        "datasource": "-- Grafana --",
+        "enable": true,
+        "hide": true,
+        "iconColor": "rgba(0, 211, 255, 1)",
+        "name": "Annotations & Alerts",
+        "type": "dashboard"
+      }
+    ]
+  },
+  "editable": true,
+  "fiscalYearStartMonth": 0,
+  "graphTooltip": 0,
+  "id": null,
+  "links": [],
+  "liveNow": false,
+  "panels": [
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": [
+          {
+            "matcher": {
+              "id": "byName",
+              "options": "Conversion %"
+            },
+            "properties": [
+              {
+                "id": "unit",
+                "value": "percent"
+              },
+              {
+                "id": "custom.displayMode",
+                "value": "color-background"
+              }
+            ]
+          }
+        ]
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 0
+      },
+      "id": 1,
+      "options": {
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Stage",
+            "desc": false
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH funnel AS (SELECT COUNT(DISTINCT actor_id) as visitors FROM public.activity_log WHERE action = 'page_view' AND created_at >= NOW() - INTERVAL '30 days'), search_stage AS (SELECT COUNT(DISTINCT actor_id) as searchers FROM public.activity_log WHERE action = 'search' AND created_at >= NOW() - INTERVAL '30 days'), cart_stage AS (SELECT COUNT(DISTINCT actor_id) as cart_users FROM public.activity_log WHERE action = 'add_to_cart' AND created_at >= NOW() - INTERVAL '30 days'), checkout_stage AS (SELECT COUNT(DISTINCT actor_id) as checkout_users FROM public.activity_log WHERE action = 'checkout_started' AND created_at >= NOW() - INTERVAL '30 days'), order_stage AS (SELECT COUNT(DISTINCT actor_id) as order_users FROM public.activity_log WHERE action = 'order_completed' AND created_at >= NOW() - INTERVAL '30 days'), paid_stage AS (SELECT COUNT(DISTINCT actor_id) as paid_users FROM public.activity_log WHERE action = 'payment_completed' AND created_at >= NOW() - INTERVAL '30 days') SELECT 'Visitor' as stage, (SELECT visitors FROM funnel) as users, 100.0 as conversion_pct UNION ALL SELECT 'Search', (SELECT searchers FROM search_stage), ROUND(100.0 * (SELECT searchers FROM search_stage) / NULLIF((SELECT visitors FROM funnel), 0), 2) UNION ALL SELECT 'Cart', (SELECT cart_users FROM cart_stage), ROUND(100.0 * (SELECT cart_users FROM cart_stage) / NULLIF((SELECT visitors FROM funnel), 0), 2) UNION ALL SELECT 'Checkout', (SELECT checkout_users FROM checkout_stage), ROUND(100.0 * (SELECT checkout_users FROM checkout_stage) / NULLIF((SELECT visitors FROM funnel), 0), 2) UNION ALL SELECT 'Order', (SELECT order_users FROM order_stage), ROUND(100.0 * (SELECT order_users FROM order_stage) / NULLIF((SELECT visitors FROM funnel), 0), 2) UNION ALL SELECT 'Paid', (SELECT paid_users FROM paid_stage), ROUND(100.0 * (SELECT paid_users FROM paid_stage) / NULLIF((SELECT visitors FROM funnel), 0), 2);",
+          "refId": "A"
+        }
+      ],
+      "title": "Customer Acquisition Funnel",
+      "type": "table"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Dropout Rate (%)",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "bars",
+            "fillOpacity": 100,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "percent"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 0
+      },
+      "id": 2,
+      "options": {
+        "legend": {
+          "calcs": [],
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": false
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "WITH funnel AS (SELECT COUNT(DISTINCT actor_id) as visitors FROM public.activity_log WHERE action = 'page_view' AND created_at >= NOW() - INTERVAL '30 days'), search_stage AS (SELECT COUNT(DISTINCT actor_id) as searchers FROM public.activity_log WHERE action = 'search' AND created_at >= NOW() - INTERVAL '30 days'), cart_stage AS (SELECT COUNT(DISTINCT actor_id) as cart_users FROM public.activity_log WHERE action = 'add_to_cart' AND created_at >= NOW() - INTERVAL '30 days'), checkout_stage AS (SELECT COUNT(DISTINCT actor_id) as checkout_users FROM public.activity_log WHERE action = 'checkout_started' AND created_at >= NOW() - INTERVAL '30 days'), order_stage AS (SELECT COUNT(DISTINCT actor_id) as order_users FROM public.activity_log WHERE action = 'order_completed' AND created_at >= NOW() - INTERVAL '30 days') SELECT 'Visitor→Search' as stage, ROUND(100.0 * (1 - (SELECT searchers FROM search_stage)::FLOAT / NULLIF((SELECT visitors FROM funnel)::FLOAT, 0)), 2) as dropout_rate UNION ALL SELECT 'Search→Cart', ROUND(100.0 * (1 - (SELECT cart_users FROM cart_stage)::FLOAT / NULLIF((SELECT searchers FROM search_stage)::FLOAT, 0)), 2) UNION ALL SELECT 'Cart→Checkout', ROUND(100.0 * (1 - (SELECT checkout_users FROM checkout_stage)::FLOAT / NULLIF((SELECT cart_users FROM cart_stage)::FLOAT, 0)), 2) UNION ALL SELECT 'Checkout→Order', ROUND(100.0 * (1 - (SELECT order_users FROM order_stage)::FLOAT / NULLIF((SELECT checkout_users FROM checkout_stage)::FLOAT, 0)), 2) ORDER BY dropout_rate DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Dropout Analysis",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "axisCenteredZero": false,
+            "axisColorMode": "text",
+            "axisLabel": "Users",
+            "axisPlacement": "auto",
+            "barAlignment": 0,
+            "drawStyle": "line",
+            "fillOpacity": 10,
+            "gradientMode": "none",
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            },
+            "lineInterpolation": "linear",
+            "lineWidth": 1,
+            "pointSize": 5,
+            "scaleDistribution": {
+              "type": "linear"
+            },
+            "showPoints": "never",
+            "spanNulls": true,
+            "stacking": {
+              "group": "A",
+              "mode": "none"
+            },
+            "thresholdsStyle": {
+              "mode": "off"
+            }
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 8
+      },
+      "id": 3,
+      "options": {
+        "legend": {
+          "calcs": ["mean", "max"],
+          "displayMode": "table",
+          "placement": "right",
+          "showLegend": true
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT DATE_TRUNC('month', created_at) as cohort_month, COUNT(DISTINCT actor_id) as new_users FROM public.activity_log WHERE action = 'signup' AND created_at >= NOW() - INTERVAL '12 months' GROUP BY DATE_TRUNC('month', created_at) ORDER BY cohort_month DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Cohort Analysis by Signup Month",
+      "type": "timeseries"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 8
+      },
+      "id": 4,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "values": false,
+          "fields": "",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(details->>'device_type', 'Unknown') as device, COUNT(DISTINCT actor_id) as users FROM public.activity_log WHERE action = 'page_view' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY device;",
+          "refId": "A"
+        }
+      ],
+      "title": "Device Breakdown",
+      "type": "piechart"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "palette-classic"
+          },
+          "custom": {
+            "hideFrom": {
+              "tooltip": false,
+              "viz": false,
+              "legend": false
+            }
+          },
+          "mappings": [],
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 0,
+        "y": 16
+      },
+      "id": 5,
+      "options": {
+        "legend": {
+          "displayMode": "list",
+          "placement": "right",
+          "showLegend": true,
+          "values": ["value", "percent"]
+        },
+        "pieType": "donut",
+        "reduceOptions": {
+          "values": false,
+          "fields": "",
+          "calcs": ["lastNotNull"]
+        },
+        "tooltip": {
+          "mode": "single",
+          "sort": "none"
+        }
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(details->>'browser', 'Unknown') as browser, COUNT(DISTINCT actor_id) as users FROM public.activity_log WHERE action = 'page_view' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY browser LIMIT 10;",
+          "refId": "A"
+        }
+      ],
+      "title": "Browser Breakdown (Top 10)",
+      "type": "piechart"
+    },
+    {
+      "datasource": "PostgreSQL",
+      "fieldConfig": {
+        "defaults": {
+          "color": {
+            "mode": "value"
+          },
+          "custom": {
+            "align": "auto",
+            "cellOptions": {
+              "type": "auto"
+            },
+            "inspect": false
+          },
+          "mappings": [],
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "unit": "short"
+        },
+        "overrides": []
+      },
+      "gridPos": {
+        "h": 8,
+        "w": 12,
+        "x": 12,
+        "y": 16
+      },
+      "id": 6,
+      "options": {
+        "footer": {
+          "countRows": false,
+          "fields": "",
+          "reducer": ["sum"],
+          "show": false
+        },
+        "showHeader": true,
+        "sortBy": [
+          {
+            "displayName": "Users",
+            "desc": true
+          }
+        ]
+      },
+      "pluginVersion": "11.0.0",
+      "targets": [
+        {
+          "datasource": "PostgreSQL",
+          "format": "table",
+          "rawQuery": true,
+          "rawSql": "SELECT COALESCE(details->>'os', 'Unknown') as os, COUNT(DISTINCT actor_id) as users, ROUND(100.0 * COUNT(DISTINCT actor_id) / SUM(COUNT(DISTINCT actor_id)) OVER (), 2) as percentage FROM public.activity_log WHERE action = 'page_view' AND created_at >= NOW() - INTERVAL '30 days' GROUP BY os ORDER BY users DESC;",
+          "refId": "A"
+        }
+      ],
+      "title": "Operating System Distribution",
+      "type": "table"
+    }
+  ],
+  "refresh": "30m",
+  "schemaVersion": 39,
+  "tags": ["funnel", "conversion", "users"],
+  "templating": {
+    "list": []
+  },
+  "time": {
+    "from": "now-30d",
+    "to": "now"
+  },
+  "timepicker": {
+    "refresh_intervals": ["30m", "1h", "6h", "12h", "24h"]
+  },
+  "timezone": "",
+  "title": "Funnel Analysis Dashboard",
+  "uid": "funnel-dashboard",
+  "version": 1,
+  "weekStart": ""
+}

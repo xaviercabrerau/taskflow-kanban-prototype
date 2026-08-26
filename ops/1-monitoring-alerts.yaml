@@ -1,0 +1,892 @@
+# TaskFlow Notification System - Monitoring & Alerts Configuration
+# Production monitoring for email delivery, API, queue management, and external integrations
+# Last updated: 2026-08-18
+
+version: "1.0"
+system: "TaskFlow Notification System"
+environment: "production"
+
+# ============================================================================
+# KEY PERFORMANCE INDICATORS (KPIs)
+# ============================================================================
+kpis:
+  - id: "email_delivery_time"
+    name: "Email Delivery Time"
+    description: "Time from job enqueue to email sent successfully"
+    unit: "milliseconds"
+    metric_type: "latency"
+    target: 2000
+    warning: 5000
+    critical: 10000
+    slo: "99.5%"
+    dashboard_tile: "main"
+    data_source: "datadog"
+    query: "avg:taskflow.email.delivery_time{env:prod}"
+
+  - id: "api_response_time"
+    name: "API Response Time (p95)"
+    description: "95th percentile API response time across all endpoints"
+    unit: "milliseconds"
+    metric_type: "latency"
+    target: 200
+    warning: 500
+    critical: 1000
+    slo: "99.0%"
+    dashboard_tile: "main"
+    data_source: "datadog"
+    query: "avg:http.request.duration{service:notification-api,env:prod}.as_count()"
+
+  - id: "job_queue_depth"
+    name: "Email Job Queue Depth"
+    description: "Number of jobs waiting to be processed in Bull queue"
+    unit: "jobs"
+    metric_type: "gauge"
+    target: 0
+    warning: 50
+    critical: 500
+    slo: "N/A"
+    dashboard_tile: "main"
+    data_source: "redis"
+    query: "LLEN taskflow:queue:email:waiting"
+
+  - id: "error_rate"
+    name: "Error Rate"
+    description: "Percentage of requests that return 5xx errors"
+    unit: "percent"
+    metric_type: "rate"
+    target: 0
+    warning: 0.5
+    critical: 2.0
+    slo: "99.5%"
+    dashboard_tile: "main"
+    data_source: "datadog"
+    query: "sum:trace.web.request{http.status_code:5xx,env:prod}.as_count() / sum:trace.web.request{env:prod}.as_count() * 100"
+
+  - id: "job_success_rate"
+    name: "Email Job Success Rate"
+    description: "Percentage of email jobs successfully delivered"
+    unit: "percent"
+    metric_type: "rate"
+    target: 99.0
+    warning: 95.0
+    critical: 90.0
+    slo: "99.5%"
+    dashboard_tile: "main"
+    data_source: "supabase"
+    query: "SELECT (COUNT(CASE WHEN status='delivered' THEN 1 END) / COUNT(*)) * 100 FROM notification_logs WHERE created_at > NOW() - INTERVAL '1 hour' AND type='email'"
+
+  - id: "failed_jobs_per_hour"
+    name: "Failed Email Jobs (per hour)"
+    description: "Number of email jobs that failed in the last hour"
+    unit: "count"
+    metric_type: "gauge"
+    target: 0
+    warning: 5
+    critical: 20
+    slo: "N/A"
+    dashboard_tile: "ops"
+    data_source: "supabase"
+    query: "SELECT COUNT(*) FROM notification_logs WHERE status='failed' AND type='email' AND created_at > NOW() - INTERVAL '1 hour'"
+
+  - id: "redis_health_ping"
+    name: "Redis Ping Latency"
+    description: "Response time for Redis PING command (connection health)"
+    unit: "milliseconds"
+    metric_type: "latency"
+    target: 10
+    warning: 50
+    critical: 100
+    slo: "99.9%"
+    dashboard_tile: "ops"
+    data_source: "redis"
+    query: "PING"
+
+  - id: "gmail_api_availability"
+    name: "Gmail API Availability"
+    description: "Percentage of successful Gmail API calls"
+    unit: "percent"
+    metric_type: "rate"
+    target: 99.9
+    warning: 99.5
+    critical: 99.0
+    slo: "99.9%"
+    dashboard_tile: "ops"
+    data_source: "datadog"
+    query: "sum:taskflow.gmail.requests{status:success,env:prod}.as_count() / sum:taskflow.gmail.requests{env:prod}.as_count() * 100"
+
+# ============================================================================
+# ALERT RULES
+# ============================================================================
+alerts:
+  critical:
+    - id: "CRIT_001"
+      name: "Email Delivery Time Exceeds Critical Threshold"
+      description: "Average email delivery time is above 10 seconds"
+      severity: "critical"
+      enabled: true
+      condition:
+        metric: "email_delivery_time"
+        operator: ">"
+        threshold: 10000
+        duration: "5m"
+        evaluation_delay: "1m"
+      channels: ["slack", "pagerduty", "email"]
+      runbook_url: "${RUNBOOK_BASE_URL}/email-delivery-latency"
+      escalation_policy: "critical_escalation"
+      auto_remediation: false
+      tags: ["email", "delivery", "latency", "p0"]
+
+    - id: "CRIT_002"
+      name: "Job Queue Depth Critical"
+      description: "Email job queue has >500 pending jobs (system backlog)"
+      severity: "critical"
+      enabled: true
+      condition:
+        metric: "job_queue_depth"
+        operator: ">"
+        threshold: 500
+        duration: "10m"
+        evaluation_delay: "2m"
+      channels: ["slack", "pagerduty", "sms"]
+      runbook_url: "${RUNBOOK_BASE_URL}/queue-backlog-management"
+      escalation_policy: "critical_escalation"
+      auto_remediation: true
+      auto_remediation_action: "scale_up_workers"
+      tags: ["queue", "backlog", "throughput", "p0"]
+
+    - id: "CRIT_003"
+      name: "API Service Returning High Error Rate"
+      description: "Error rate exceeds 2% (500+ errors per 100k requests)"
+      severity: "critical"
+      enabled: true
+      condition:
+        metric: "error_rate"
+        operator: ">"
+        threshold: 2.0
+        duration: "3m"
+        evaluation_delay: "1m"
+      channels: ["slack", "pagerduty", "email", "sms"]
+      runbook_url: "${RUNBOOK_BASE_URL}/api-error-spike"
+      escalation_policy: "critical_escalation"
+      auto_remediation: false
+      tags: ["api", "errors", "service-health", "p0"]
+
+    - id: "CRIT_004"
+      name: "Redis Connection Unhealthy"
+      description: "Redis PING latency exceeds 100ms or connection fails"
+      severity: "critical"
+      enabled: true
+      condition:
+        metric: "redis_health_ping"
+        operator: ">"
+        threshold: 100
+        duration: "2m"
+        evaluation_delay: "30s"
+      channels: ["slack", "pagerduty", "sms"]
+      runbook_url: "${RUNBOOK_BASE_URL}/redis-connection-issues"
+      escalation_policy: "critical_escalation"
+      auto_remediation: false
+      tags: ["redis", "infrastructure", "database", "p0"]
+
+    - id: "CRIT_005"
+      name: "Gmail API Availability Degraded"
+      description: "Gmail API success rate drops below 99%"
+      severity: "critical"
+      enabled: true
+      condition:
+        metric: "gmail_api_availability"
+        operator: "<"
+        threshold: 99.0
+        duration: "5m"
+        evaluation_delay: "2m"
+      channels: ["slack", "pagerduty", "email"]
+      runbook_url: "${RUNBOOK_BASE_URL}/gmail-api-issues"
+      escalation_policy: "critical_escalation"
+      external_service: "gmail"
+      tags: ["external-api", "gmail", "third-party", "p0"]
+
+  warning:
+    - id: "WARN_001"
+      name: "Email Delivery Time Warning"
+      description: "Email delivery time approaching critical levels (5-10 seconds)"
+      severity: "warning"
+      enabled: true
+      condition:
+        metric: "email_delivery_time"
+        operator: ">"
+        threshold: 5000
+        duration: "5m"
+        evaluation_delay: "1m"
+      channels: ["slack"]
+      runbook_url: "${RUNBOOK_BASE_URL}/email-delivery-latency"
+      escalation_policy: "warning_escalation"
+      tags: ["email", "delivery", "latency"]
+
+    - id: "WARN_002"
+      name: "Job Queue Depth Warning"
+      description: "Email job queue has 50+ pending jobs (possible throughput issue)"
+      severity: "warning"
+      enabled: true
+      condition:
+        metric: "job_queue_depth"
+        operator: ">"
+        threshold: 50
+        duration: "15m"
+        evaluation_delay: "3m"
+      channels: ["slack"]
+      runbook_url: "${RUNBOOK_BASE_URL}/queue-backlog-management"
+      escalation_policy: "warning_escalation"
+      tags: ["queue", "throughput"]
+
+    - id: "WARN_003"
+      name: "API Response Time Elevated"
+      description: "API p95 response time exceeds 500ms"
+      severity: "warning"
+      enabled: true
+      condition:
+        metric: "api_response_time"
+        operator: ">"
+        threshold: 500
+        duration: "10m"
+        evaluation_delay: "2m"
+      channels: ["slack"]
+      runbook_url: "${RUNBOOK_BASE_URL}/api-performance-degradation"
+      escalation_policy: "warning_escalation"
+      tags: ["api", "performance", "latency"]
+
+    - id: "WARN_004"
+      name: "Job Success Rate Declining"
+      description: "Email job success rate below 95% target"
+      severity: "warning"
+      enabled: true
+      condition:
+        metric: "job_success_rate"
+        operator: "<"
+        threshold: 95.0
+        duration: "20m"
+        evaluation_delay: "5m"
+      channels: ["slack"]
+      runbook_url: "${RUNBOOK_BASE_URL}/email-delivery-failures"
+      escalation_policy: "warning_escalation"
+      tags: ["email", "delivery", "reliability"]
+
+# ============================================================================
+# DASHBOARDS
+# ============================================================================
+dashboards:
+  main:
+    name: "TaskFlow Notification System - Main Dashboard"
+    description: "Real-time overview of notification system health and performance"
+    refresh_interval: "30s"
+    width: "1920"
+    height: "1080"
+    tiles:
+      - id: "tile_001"
+        type: "metric_gauge"
+        title: "Email Delivery Time (avg)"
+        metric: "email_delivery_time"
+        position: { x: 0, y: 0, width: 6, height: 4 }
+        thresholds:
+          - value: 2000
+            color: "green"
+            label: "Healthy"
+          - value: 5000
+            color: "yellow"
+            label: "Warning"
+          - value: 10000
+            color: "red"
+            label: "Critical"
+
+      - id: "tile_002"
+        type: "metric_gauge"
+        title: "API Response Time (p95)"
+        metric: "api_response_time"
+        position: { x: 6, y: 0, width: 6, height: 4 }
+        thresholds:
+          - value: 200
+            color: "green"
+          - value: 500
+            color: "yellow"
+          - value: 1000
+            color: "red"
+
+      - id: "tile_003"
+        type: "time_series"
+        title: "Job Queue Depth Trend"
+        metric: "job_queue_depth"
+        position: { x: 12, y: 0, width: 6, height: 4 }
+        interval: "1m"
+        aggregation: "avg"
+
+      - id: "tile_004"
+        type: "metric_gauge"
+        title: "Error Rate"
+        metric: "error_rate"
+        position: { x: 18, y: 0, width: 6, height: 4 }
+        unit: "percent"
+        thresholds:
+          - value: 0.5
+            color: "green"
+          - value: 1.0
+            color: "yellow"
+          - value: 2.0
+            color: "red"
+
+      - id: "tile_005"
+        type: "metric_gauge"
+        title: "Email Job Success Rate"
+        metric: "job_success_rate"
+        position: { x: 0, y: 4, width: 6, height: 4 }
+        unit: "percent"
+        thresholds:
+          - value: 99.0
+            color: "green"
+          - value: 95.0
+            color: "yellow"
+          - value: 90.0
+            color: "red"
+
+      - id: "tile_006"
+        type: "time_series"
+        title: "Failed Jobs (last 24h)"
+        metric: "failed_jobs_per_hour"
+        position: { x: 6, y: 4, width: 6, height: 4 }
+        interval: "1h"
+        aggregation: "sum"
+
+      - id: "tile_007"
+        type: "heatmap"
+        title: "Email Delivery Distribution (latency buckets)"
+        metric: "email_delivery_time"
+        position: { x: 12, y: 4, width: 6, height: 4 }
+        buckets: [0, 1000, 2000, 5000, 10000]
+
+      - id: "tile_008"
+        type: "status_panel"
+        title: "Critical Alerts Status"
+        position: { x: 18, y: 4, width: 6, height: 4 }
+        show_alerts: ["CRIT_001", "CRIT_002", "CRIT_003", "CRIT_004", "CRIT_005"]
+
+  ops:
+    name: "TaskFlow Notification System - Ops Dashboard"
+    description: "Infrastructure and operational metrics for on-call engineers"
+    refresh_interval: "15s"
+    width: "1920"
+    height: "1080"
+    tiles:
+      - id: "tile_ops_001"
+        type: "metric_gauge"
+        title: "Redis Ping Latency"
+        metric: "redis_health_ping"
+        position: { x: 0, y: 0, width: 6, height: 4 }
+        thresholds:
+          - value: 10
+            color: "green"
+          - value: 50
+            color: "yellow"
+          - value: 100
+            color: "red"
+
+      - id: "tile_ops_002"
+        type: "metric_gauge"
+        title: "Gmail API Availability"
+        metric: "gmail_api_availability"
+        position: { x: 6, y: 0, width: 6, height: 4 }
+        unit: "percent"
+        thresholds:
+          - value: 99.9
+            color: "green"
+          - value: 99.5
+            color: "yellow"
+          - value: 99.0
+            color: "red"
+
+      - id: "tile_ops_003"
+        type: "time_series"
+        title: "Worker Pool Utilization"
+        position: { x: 12, y: 0, width: 6, height: 4 }
+        metrics: ["taskflow.workers.active", "taskflow.workers.total"]
+        interval: "30s"
+
+      - id: "tile_ops_004"
+        type: "log_stream"
+        title: "Recent Errors (last 100)"
+        position: { x: 18, y: 0, width: 6, height: 4 }
+        log_query: 'service:notification-api level:ERROR env:prod'
+        limit: 100
+
+      - id: "tile_ops_005"
+        type: "alert_list"
+        title: "Active Alerts (All Severities)"
+        position: { x: 0, y: 4, width: 24, height: 4 }
+        filters:
+          - key: "service"
+            value: "notification-system"
+          - key: "env"
+            value: "prod"
+        sort_by: "severity"
+
+# ============================================================================
+# NOTIFICATION CHANNELS
+# ============================================================================
+channels:
+  - id: "slack"
+    name: "Slack - #alerts-taskflow"
+    type: "slack"
+    enabled: true
+    webhook_url: "${SLACK_WEBHOOK_URL}"
+    default_mention: "@taskflow-oncall"
+    message_format: "verbose"
+    include_runbook: true
+    include_logs: false
+    retry_policy:
+      max_retries: 3
+      backoff_multiplier: 2
+
+  - id: "pagerduty"
+    name: "PagerDuty - TaskFlow Service"
+    type: "pagerduty"
+    enabled: true
+    integration_key: "${PAGERDUTY_INTEGRATION_KEY}"
+    severity_mapping:
+      critical: "critical"
+      warning: "warning"
+    include_runbook: true
+    incident_auto_resolve: false
+    retry_policy:
+      max_retries: 5
+      backoff_multiplier: 2
+
+  - id: "email"
+    name: "Email - Alert Recipients"
+    type: "email"
+    enabled: true
+    recipients: "${ALERTS_EMAIL_RECIPIENTS}"
+    from_address: "${ALERTS_FROM_ADDRESS}"
+    cc_on_critical: true
+    retry_policy:
+      max_retries: 2
+      backoff_multiplier: 1.5
+
+  - id: "sms"
+    name: "SMS - On-call Engineer"
+    type: "sms"
+    enabled: true
+    provider: "twilio"
+    twilio_account_sid: "${TWILIO_ACCOUNT_SID}"
+    twilio_auth_token: "${TWILIO_AUTH_TOKEN}"
+    from_number: "${TWILIO_FROM_NUMBER}"
+    to_numbers: ["${ON_CALL_PRIMARY_PHONE}"]
+    rate_limit: "max 1 message per 5 minutes per phone"
+    message_template: |
+      CRITICAL: {{ alert.name }}
+      Metric: {{ alert.metric }} = {{ alert.current_value }}
+      Runbook: {{ alert.runbook_url }}
+
+# ============================================================================
+# MAINTENANCE WINDOWS
+# ============================================================================
+maintenance_windows:
+  - id: "maint_weekly"
+    name: "Weekly Maintenance Window"
+    description: "Scheduled maintenance for routine updates and patches"
+    schedule:
+      day_of_week: "Sunday"
+      start_time: "02:00 UTC"
+      duration_minutes: 30
+    recurring: true
+    suppress_alerts: true
+    services:
+      - "redis"
+      - "notification-workers"
+    notifications_before_minutes: [60, 15]
+    tags: ["weekly", "routine"]
+
+  - id: "maint_monthly"
+    name: "Monthly Database Maintenance"
+    description: "Monthly database optimization, cleanup, and backups"
+    schedule:
+      day_of_month: "first-sunday"
+      start_time: "03:00 UTC"
+      duration_minutes: 120
+    recurring: true
+    suppress_alerts: true
+    services:
+      - "supabase"
+      - "notification-logs"
+    notifications_before_minutes: [24*60, 60, 15]
+    tags: ["monthly", "database"]
+
+  - id: "maint_gmail_sync"
+    name: "Gmail API Maintenance"
+    description: "Scheduled maintenance for Gmail API integrations"
+    schedule:
+      day_of_week: "Tuesday"
+      start_time: "14:00 UTC"
+      duration_minutes: 45
+    recurring: true
+    suppress_alerts: true
+    services:
+      - "gmail-api-client"
+      - "webhook-handler"
+    notifications_before_minutes: [60, 15]
+    tags: ["external-api", "gmail"]
+
+# ============================================================================
+# ESCALATION POLICIES
+# ============================================================================
+escalation_policies:
+  critical_escalation:
+    name: "Critical Escalation Policy"
+    description: "Multi-level escalation for production-impacting incidents"
+    levels:
+      - level: 1
+        name: "On-Call Engineer (Primary)"
+        wait_minutes: 5
+        notify_via:
+          - "slack"
+          - "pagerduty"
+          - "sms"
+        escalation_target: "${PRIMARY_ON_CALL_USER_ID}"
+
+      - level: 2
+        name: "On-Call Manager (Secondary)"
+        wait_minutes: 10
+        notify_via:
+          - "slack"
+          - "pagerduty"
+          - "sms"
+          - "email"
+        escalation_target: "${SECONDARY_ON_CALL_USER_ID}"
+        condition: "if level_1_unacknowledged"
+
+      - level: 3
+        name: "Engineering Lead (Tertiary)"
+        wait_minutes: 15
+        notify_via:
+          - "slack"
+          - "email"
+          - "sms"
+        escalation_target: "${ENGINEERING_LEAD_USER_ID}"
+        condition: "if level_2_unacknowledged"
+
+  warning_escalation:
+    name: "Warning Escalation Policy"
+    description: "Escalation for degraded system performance"
+    levels:
+      - level: 1
+        name: "Team Slack Channel"
+        wait_minutes: 15
+        notify_via:
+          - "slack"
+        escalation_target: "#alerts-taskflow"
+
+      - level: 2
+        name: "On-Call Engineer"
+        wait_minutes: 30
+        notify_via:
+          - "slack"
+          - "pagerduty"
+        escalation_target: "${PRIMARY_ON_CALL_USER_ID}"
+        condition: "if level_1_unresolved"
+
+# ============================================================================
+# QUICK REFERENCE COMMANDS
+# ============================================================================
+quick_reference:
+  section: "On-Call Quick Reference"
+
+  vercel_commands:
+    - name: "View recent deployments"
+      command: "vercel ls"
+      description: "List recent deployments for TaskFlow notification service"
+
+    - name: "Check deployment logs"
+      command: "vercel logs --follow"
+      description: "Stream real-time logs from current production deployment"
+
+    - name: "View environment variables"
+      command: "vercel env ls"
+      description: "List all production environment variables"
+
+    - name: "Rollback to previous version"
+      command: "vercel rollback"
+      description: "Rollback to previous stable deployment (requires confirmation)"
+
+  datadog_commands:
+    - name: "Query email delivery metrics"
+      command: "curl -X GET 'https://api.datadoghq.com/api/v1/query?query=avg:taskflow.email.delivery_time{env:prod}&from=$(date -d \"1 hour ago\" +%s)&to=$(date +%s)' -H 'DD-API-KEY: ${DD_API_KEY}' -H 'DD-APPLICATION-KEY: ${DD_APP_KEY}'"
+      description: "Fetch average email delivery time for last hour"
+
+    - name: "List active alerts"
+      command: "curl -X GET 'https://api.datadoghq.com/api/v1/monitor' -H 'DD-API-KEY: ${DD_API_KEY}' -H 'DD-APPLICATION-KEY: ${DD_APP_KEY}'"
+      description: "Get list of all active monitoring alerts"
+
+    - name: "Trigger synthetic test"
+      command: "curl -X POST 'https://api.datadoghq.com/api/v1/synthetics/tests/run' -d '{\"tests\":[{\"public_id\":\"abc-123\"}]}' -H 'DD-API-KEY: ${DD_API_KEY}' -H 'DD-APPLICATION-KEY: ${DD_APP_KEY}'"
+      description: "Run synthetic health check for notification API"
+
+  redis_commands:
+    - name: "Connect to Redis CLI"
+      command: "redis-cli -h ${REDIS_HOST} -p ${REDIS_PORT} -a ${REDIS_PASSWORD}"
+      description: "Open interactive Redis CLI connection to production cache"
+
+    - name: "Check queue depth"
+      command: "redis-cli -h ${REDIS_HOST} LLEN taskflow:queue:email:waiting"
+      description: "Get current number of pending email jobs in queue"
+
+    - name: "View queue samples"
+      command: "redis-cli -h ${REDIS_HOST} LRANGE taskflow:queue:email:waiting 0 10"
+      description: "View first 10 jobs in email queue (debugging)"
+
+    - name: "Clear failed jobs queue"
+      command: "redis-cli -h ${REDIS_HOST} DEL taskflow:queue:email:failed"
+      description: "Clear failed jobs queue (handle with care - purges retry data)"
+
+    - name: "Monitor Redis memory usage"
+      command: "redis-cli -h ${REDIS_HOST} INFO memory"
+      description: "Check memory usage and eviction statistics"
+
+  supabase_commands:
+    - name: "Query failed notifications"
+      command: "psql postgresql://${SUPABASE_USER}:${SUPABASE_PASSWORD}@${SUPABASE_HOST}:5432/postgres -c \"SELECT id, type, status, error_message, created_at FROM notification_logs WHERE status='failed' AND created_at > NOW() - INTERVAL '1 hour' ORDER BY created_at DESC LIMIT 20;\""
+      description: "View recent failed notification attempts"
+
+    - name: "Check email delivery statistics"
+      command: "psql postgresql://${SUPABASE_USER}:${SUPABASE_PASSWORD}@${SUPABASE_HOST}:5432/postgres -c \"SELECT status, COUNT(*) as count FROM notification_logs WHERE type='email' AND created_at > NOW() - INTERVAL '1 hour' GROUP BY status;\""
+      description: "Get breakdown of email delivery status for last hour"
+
+    - name: "List retry attempts"
+      command: "psql postgresql://${SUPABASE_USER}:${SUPABASE_PASSWORD}@${SUPABASE_HOST}:5432/postgres -c \"SELECT id, recipient_email, retry_count, last_error FROM notification_logs WHERE retry_count > 0 AND type='email' ORDER BY retry_count DESC LIMIT 50;\""
+      description: "Find emails with highest retry counts (possible issues)"
+
+    - name: "Enable emergency maintenance mode"
+      command: "psql postgresql://${SUPABASE_USER}:${SUPABASE_PASSWORD}@${SUPABASE_HOST}:5432/postgres -c \"UPDATE system_config SET maintenance_mode=true, maintenance_reason='Emergency maintenance - see runbook' WHERE id='notifications';\""
+      description: "CRITICAL: Enable system-wide maintenance mode (gracefully pauses new notifications)"
+
+  gmail_api_commands:
+    - name: "Check Gmail quota usage"
+      command: "curl -X GET 'https://www.googleapis.com/gmail/v1/users/me/messages?q=is:sent%20newer_than:1h' -H 'Authorization: Bearer ${GMAIL_API_TOKEN}' | jq '.messages | length'"
+      description: "Count emails sent through Gmail API in last hour"
+
+    - name: "Test Gmail API connectivity"
+      command: "curl -X GET 'https://www.googleapis.com/gmail/v1/users/me/profile' -H 'Authorization: Bearer ${GMAIL_API_TOKEN}'"
+      description: "Simple connectivity test to Gmail API"
+
+    - name: "View recent webhook payloads"
+      command: "curl -X GET 'https://taskflow-api.example.com/admin/gmail-webhook-logs?limit=20&order=desc' -H 'Authorization: Bearer ${API_ADMIN_TOKEN}'"
+      description: "View recent Gmail webhook events and payloads"
+
+  standard_runbook_steps:
+    - step: 1
+      name: "Acknowledge the alert"
+      description: "Mark incident as acknowledged in PagerDuty/Slack to pause escalation"
+
+    - step: 2
+      name: "Assess the impact"
+      description: "Check affected services, user impact, and incident scope"
+
+    - step: 3
+      name: "Gather diagnostic data"
+      description: "Collect logs, metrics, and system state from relevant dashboards"
+
+    - step: 4
+      name: "Execute remediation"
+      description: "Follow alert-specific runbook steps or auto-remediation actions"
+
+    - step: 5
+      name: "Monitor recovery"
+      description: "Track metrics until system returns to healthy baseline"
+
+    - step: 6
+      name: "Post-incident review"
+      description: "Create ticket for root cause analysis and prevention measures"
+
+# ============================================================================
+# DATADOG PLATFORM CONFIGURATION
+# ============================================================================
+datadog:
+  enabled: true
+  site: "datadoghq.com"
+
+  # Datadog API Configuration
+  api:
+    # API Key: Set via environment variable DD_API_KEY
+    # App Key: Set via environment variable DD_APP_KEY
+    # See: docs/DATADOG_SETUP.md for full setup instructions
+    key_source: "environment_variables"
+    validate_on_startup: true
+    timeout_seconds: 30
+    retry_policy:
+      max_retries: 3
+      backoff_multiplier: 2
+
+  # Custom Metrics Configuration
+  metrics:
+    enabled: true
+    source: "custom_instrumentation"
+    flush_interval_seconds: 10
+
+    # Metrics to be sent to Datadog
+    custom_metrics:
+      - metric: "taskflow.email.delivery_time"
+        type: "histogram"
+        unit: "milliseconds"
+        tags: ["service:notification-system", "type:email"]
+
+      - metric: "taskflow.api.response_time"
+        type: "histogram"
+        unit: "milliseconds"
+        tags: ["service:notification-api"]
+
+      - metric: "taskflow.queue.depth"
+        type: "gauge"
+        unit: "count"
+        tags: ["service:queue-manager", "queue:email"]
+
+      - metric: "taskflow.error.rate"
+        type: "gauge"
+        unit: "percent"
+        tags: ["service:notification-api"]
+
+      - metric: "taskflow.job.success_rate"
+        type: "gauge"
+        unit: "percent"
+        tags: ["service:job-processor", "type:email"]
+
+      - metric: "taskflow.redis.ping_latency"
+        type: "histogram"
+        unit: "milliseconds"
+        tags: ["service:cache-layer"]
+
+      - metric: "taskflow.gmail.api_availability"
+        type: "gauge"
+        unit: "percent"
+        tags: ["external-api:gmail"]
+
+  # APM (Application Performance Monitoring) Configuration
+  apm:
+    enabled: true
+    service_name: "notification-system"
+    environment: "${DATADOG_ENV:-production}"
+    version: "1.0.0"
+    sample_rate: 0.1
+
+    # Ignore health check endpoints to reduce noise
+    ignore_endpoints:
+      - "/health"
+      - "/healthz"
+      - "/ready"
+      - "/_next/static/*"
+
+    # Profiling (production performance analysis)
+    profiling:
+      enabled: true
+      cpu_profiling: true
+      memory_profiling: true
+      sample_rate: 0.05
+
+  # Logs Configuration
+  logs:
+    enabled: true
+    level: "ERROR"
+    injection: true
+    include_patterns:
+      - "ERROR"
+      - "CRITICAL"
+      - "FATAL"
+      - "email_delivery_failed"
+      - "api_error"
+      - "external_service_error"
+
+  # Cost Optimization Settings
+  cost_optimization:
+    max_daily_api_calls: 10000
+    batch_size: 50
+    batch_interval_seconds: 10
+    detailed_profiling: false
+    detailed_tracing: false
+
+# ============================================================================
+# INTEGRATION GUIDES
+# ============================================================================
+integration_guides:
+  datadog_setup:
+    title: "Datadog Setup & Configuration"
+    url: "docs/DATADOG_SETUP.md"
+    description: "Complete step-by-step guide for setting up Datadog monitoring integration"
+
+  threshold_validation:
+    title: "Thresholds Validation Against SLA"
+    url: "ops/THRESHOLDS_VALIDATION.md"
+    description: "Validate monitoring thresholds against 99.5% SLA target with mathematical proofs"
+
+  threshold_explanation:
+    title: "Understanding Each Threshold"
+    url: "ops/THRESHOLDS_EXPLAINED.md"
+    description: "Deep dive into why each threshold was chosen and what happens when exceeded"
+
+# ============================================================================
+# METADATA & CONFIGURATION
+# ============================================================================
+metadata:
+  created_date: "2026-08-18"
+  last_modified: "2026-08-18"
+  managed_by: "CloudOps Team"
+  review_schedule: "quarterly"
+  next_review_date: "2026-11-18"
+  sla_target: "99.5%"
+  incident_response_time_sla: "5 minutes"
+  mean_time_to_recovery_target: "15 minutes"
+
+  contacts:
+    - role: "On-Call Engineer"
+      contact_method: "PagerDuty"
+      schedule: "On-call schedule in PagerDuty"
+
+    - role: "Engineering Manager"
+      email: "${ENGINEERING_LEAD_EMAIL}"
+      phone: "${ENGINEERING_LEAD_PHONE}"
+
+    - role: "Infrastructure Team"
+      email: "${INFRASTRUCTURE_TEAM_EMAIL}"
+      slack_channel: "#infrastructure"
+
+  related_documentation:
+    - title: "TaskFlow Notification System Architecture"
+      url: "${TASKFLOW_URL}/docs/architecture"
+
+    - title: "Email Delivery Troubleshooting Guide"
+      url: "${RUNBOOK_BASE_URL}/email-delivery-failures"
+
+    - title: "Incident Response Playbook"
+      url: "${TASKFLOW_URL}/docs/incident-response"
+
+    - title: "Production Deployment Guide"
+      url: "${TASKFLOW_URL}/docs/deployment"
+
+    - title: "Datadog Setup Guide"
+      url: "docs/DATADOG_SETUP.md"
+      description: "Step-by-step guide for Datadog integration, API key setup, dashboard creation, and alert configuration"
+
+    - title: "Thresholds Validation"
+      url: "ops/THRESHOLDS_VALIDATION.md"
+      description: "Mathematical validation of all thresholds against 99.5% SLA target with SLO budget calculations"
+
+    - title: "Thresholds Explained"
+      url: "ops/THRESHOLDS_EXPLAINED.md"
+      description: "Business and technical rationale for each monitoring threshold and tuning guidance"
+
+  tags:
+    - "production"
+    - "monitoring"
+    - "alerting"
+    - "email"
+    - "notifications"
+    - "sla-critical"
+    - "datadog-enabled"
+    - "threshold-validated"
+
+# ============================================================================
+# END OF CONFIGURATION FILE
+# ============================================================================

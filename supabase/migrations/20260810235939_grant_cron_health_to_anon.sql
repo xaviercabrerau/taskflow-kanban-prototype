@@ -1,0 +1,24 @@
+-- Grant anon EXECUTE on get_cron_health().
+--
+-- get_cron_health() was originally granted to `authenticated` only (see
+-- 20260810231215_cron_health_rpc.sql / 20260810231315_fix_cron_health_rpc_job_names.sql),
+-- because it's a SECURITY DEFINER function that reads cron.job_run_details,
+-- a schema anon/authenticated cannot read directly.
+--
+-- src/app/api/cron/alert-check/route.ts is a new scheduled endpoint (called
+-- by Vercel Cron and/or an external uptime monitor) that has no signed-in
+-- Supabase user to forward a session token for, so it must call this RPC as
+-- anon. That route is itself gated by a `CRON_SECRET` shared-secret check at
+-- the HTTP layer (returns 401 immediately without it) before any Supabase
+-- call happens, so this grant does not expose the RPC to arbitrary anonymous
+-- traffic in practice -- only to callers who already know CRON_SECRET.
+-- The data returned (whether 4 known, non-secret job names are stale) is
+-- also low-sensitivity: no tenant data, no credentials, no job internals
+-- beyond name/last-run/last-status.
+--
+-- NOTE: this migration has NOT been applied to the live database yet. It
+-- needs to be run separately (e.g. `supabase db push` or via the Supabase
+-- dashboard SQL editor) before /api/cron/alert-check's cron-health check
+-- will work in production instead of failing with "permission denied".
+
+grant execute on function public.get_cron_health() to anon;

@@ -1,0 +1,15 @@
+/**
+ * DEPRECATED: This file is kept for reference only.
+ *
+ * Request tracing has been integrated into src/proxy.ts instead.
+ * Next.js v16+ with Edge Middleware requires using proxy.ts, not middleware.ts.
+ *
+ * Features implemented in proxy.ts:
+ * - generateRequestId(): Creates unique request IDs
+ * - setRequestContext(): Stores request ID in AsyncLocalStorage
+ * - Request ID propagation to response headers
+ *
+ * See: src/proxy.ts for the actual implementation
+ */
+
+// This file is intentionally empty to avoid conflicts with proxy.ts

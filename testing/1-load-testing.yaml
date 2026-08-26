@@ -1,0 +1,638 @@
+# TaskFlow Notification System - Load Testing Configuration
+# ===========================================================================
+# Production-Ready K6 Load Testing Setup
+# ===========================================================================
+
+# Configuration metadata
+metadata:
+  name: "TaskFlow Notification System Load Tests"
+  version: "1.0.0"
+  description: "Comprehensive load testing for notification API endpoints"
+  created_date: "2026-08-18"
+  maintained_by: "TaskFlow DevOps Team"
+
+# ===========================================================================
+# SECTION 1: Test Scenarios Configuration
+# ===========================================================================
+
+scenarios:
+  # Scenario 1: Baseline Test (5 min)
+  # Purpose: Establish performance baseline under normal conditions
+  baseline:
+    name: "Baseline Test"
+    duration: "5m"
+    virtual_users: 10
+    ramp_up: "30s"
+    ramp_down: "30s"
+    endpoints:
+      - GET /api/health
+      - GET /api/admin/notification-preferences
+      - GET /api/admin/users
+    metrics:
+      - response_time
+      - error_rate
+      - throughput
+      - success_rate
+    thresholds:
+      p95_latency: "500ms"
+      p99_latency: "1s"
+      error_rate: "< 0.1%"
+      success_rate: "> 99.9%"
+
+  # Scenario 2: Ramp-up Test (15 min total)
+  # Purpose: Test system behavior under gradually increasing load
+  ramp_up:
+    name: "Ramp-up Test"
+    phases:
+      - duration: "5m"
+        from_vus: 10
+        to_vus: 100
+        description: "Gradual ramp-up to 100 VUs"
+      - duration: "5m"
+        vus: 100
+        description: "Sustained load at 100 VUs"
+      - duration: "5m"
+        from_vus: 100
+        to_vus: 0
+        description: "Ramp-down to baseline"
+    endpoints:
+      - GET /api/health
+      - GET /api/admin/notification-preferences
+      - PATCH /api/admin/notification-preferences
+      - GET /api/admin/users
+      - POST /api/admin/create-user
+    metrics:
+      - response_time
+      - error_rate
+      - throughput
+      - memory_usage
+      - database_connections
+    thresholds:
+      p95_latency: "600ms"
+      p99_latency: "1.2s"
+      error_rate: "< 0.2%"
+      success_rate: "> 99.8%"
+
+  # Scenario 3: Spike Test (10 min total)
+  # Purpose: Test system recovery from sudden traffic spikes
+  spike:
+    name: "Spike Test"
+    phases:
+      - duration: "2m"
+        vus: 10
+        description: "Baseline traffic"
+      - duration: "2m"
+        vus: 500
+        description: "Sudden spike to 500 VUs"
+      - duration: "2m"
+        vus: 10
+        description: "Recovery back to baseline"
+      - duration: "4m"
+        vus: 10
+        description: "Monitor continued stability"
+    metrics:
+      - response_time
+      - error_rate
+      - recovery_time
+      - queue_depth
+      - database_connections
+    thresholds:
+      max_latency: "2s"
+      error_rate: "< 1%"
+      recovery_time: "< 2m"
+      success_rate: "> 99%"
+
+  # Scenario 4: Stress Test (20 min)
+  # Purpose: Find system breaking point through incremental load increase
+  stress:
+    name: "Stress Test"
+    phases:
+      - duration: "2m"
+        vus: 50
+      - duration: "2m"
+        vus: 100
+      - duration: "2m"
+        vus: 200
+      - duration: "2m"
+        vus: 300
+      - duration: "2m"
+        vus: 400
+      - duration: "2m"
+        vus: 500
+      - duration: "2m"
+        vus: 600
+      - duration: "2m"
+        vus: 700
+      - duration: "2m"
+        vus: 800
+      - duration: "2m"
+        vus: 900
+    metrics:
+      - response_time
+      - error_rate
+      - cpu_usage
+      - memory_usage
+      - database_connections
+      - breaking_point
+    description: "Incrementally increase load until system degradation detected"
+
+  # Scenario 5: Endurance Test (60 min)
+  # Purpose: Detect memory leaks and resource exhaustion under sustained load
+  endurance:
+    name: "Endurance Test"
+    duration: "60m"
+    virtual_users: 50
+    endpoints:
+      - GET /api/health (distributed)
+      - GET /api/admin/notification-preferences (distributed)
+      - PATCH /api/admin/notification-preferences (distributed)
+      - GET /api/admin/users (distributed)
+    metrics:
+      - response_time (p50, p95, p99)
+      - memory_usage_trend
+      - cpu_usage_trend
+      - database_connections
+      - gc_pause_time
+      - error_rate_trend
+    thresholds:
+      p95_latency: "500ms"
+      error_rate: "< 0.1%"
+      memory_growth: "< 10% per hour"
+      connection_stability: "stable"
+
+  # Scenario 6: Email Delivery Test (30 min)
+  # Purpose: Test email notification delivery under high concurrency
+  email_delivery:
+    name: "Email Delivery Test"
+    phases:
+      - duration: "5m"
+        vus: 50
+        description: "Ramp-up to email delivery load"
+      - duration: "20m"
+        vus: 100
+        description: "Sustained email delivery test"
+      - duration: "5m"
+        vus: 0
+        description: "Ramp-down and monitoring"
+    operations:
+      - trigger_notifications: 100
+        payload_type: "email"
+        event_types: ["task_assigned", "task_mentioned", "status_changed"]
+    metrics:
+      - email_delivery_latency
+      - queue_depth
+      - queue_processing_rate
+      - delivery_success_rate
+      - bounce_rate
+    thresholds:
+      delivery_latency_p95: "2m"
+      queue_depth: "< 100 jobs"
+      delivery_success_rate: "> 99.5%"
+
+# ===========================================================================
+# SECTION 2: K6 Script Configuration
+# ===========================================================================
+
+k6_script:
+  setup:
+    # Authentication and test data initialization
+    auth_strategy: "bearer_token"
+    test_users: 50
+    test_organizations: 5
+    test_data_size: "small"  # small, medium, large
+
+  execution:
+    # Test execution configuration
+    graceful_shutdown: "30s"
+    graceful_stop: "10s"
+    ramp_down: "30s"
+
+  teardown:
+    # Cleanup after test execution
+    cleanup_test_data: true
+    generate_summary: true
+    export_results: true
+
+  # Advanced K6 options
+  options:
+    # Timeouts
+    timeout: "10s"
+    batch_per_host: 6
+
+    # Thresholds (overall)
+    thresholds:
+      # Requests
+      "http_req_duration": ["p(95) < 500", "p(99) < 1000"]
+      "http_req_duration{staticAsset:yes}": ["p(99) < 1000"]
+      "http_reqs": ["count > 100"]
+      "http_req_failed": ["rate < 0.1"]
+
+      # Other metrics
+      "group_duration": ["avg < 600"]
+
+# ===========================================================================
+# SECTION 3: Metrics to Collect
+# ===========================================================================
+
+metrics:
+  # Response Time Metrics
+  response_time:
+    - name: "p50_latency"
+      unit: "milliseconds"
+      threshold: "< 300ms"
+    - name: "p75_latency"
+      unit: "milliseconds"
+      threshold: "< 400ms"
+    - name: "p95_latency"
+      unit: "milliseconds"
+      threshold: "< 500ms"
+    - name: "p99_latency"
+      unit: "milliseconds"
+      threshold: "< 1000ms"
+    - name: "max_latency"
+      unit: "milliseconds"
+      description: "Maximum response time observed"
+    - name: "avg_latency"
+      unit: "milliseconds"
+      description: "Average response time"
+
+  # Error Metrics
+  errors:
+    - name: "error_rate"
+      unit: "percentage"
+      threshold: "< 0.1%"
+      description: "Percentage of failed requests"
+    - name: "error_count"
+      unit: "count"
+      description: "Total number of errors"
+    - name: "error_by_type"
+      unit: "count"
+      categories:
+        - "4xx_errors"
+        - "5xx_errors"
+        - "timeout_errors"
+        - "network_errors"
+
+  # Throughput Metrics
+  throughput:
+    - name: "requests_per_second"
+      unit: "rps"
+      description: "Number of requests per second"
+    - name: "bytes_received_per_sec"
+      unit: "bytes/sec"
+      description: "Throughput (receiving)"
+    - name: "bytes_sent_per_sec"
+      unit: "bytes/sec"
+      description: "Throughput (sending)"
+
+  # Success Metrics
+  success:
+    - name: "success_rate"
+      unit: "percentage"
+      threshold: "> 99.9%"
+      description: "Percentage of successful requests"
+    - name: "success_count"
+      unit: "count"
+      description: "Total successful requests"
+
+  # Resource Usage
+  resources:
+    - name: "cpu_usage"
+      unit: "percentage"
+      threshold: "< 80%"
+      description: "System CPU utilization"
+    - name: "memory_usage"
+      unit: "MB"
+      threshold: "< 2048"
+      description: "Memory consumed by application"
+    - name: "database_connections"
+      unit: "count"
+      threshold: "< 100"
+      description: "Active database connections"
+    - name: "connection_pool_usage"
+      unit: "percentage"
+      threshold: "< 90%"
+      description: "Percentage of connection pool utilized"
+
+  # Queue Metrics
+  queue:
+    - name: "queue_depth"
+      unit: "count"
+      threshold: "< 100"
+      description: "Current job queue size"
+    - name: "queue_processing_rate"
+      unit: "jobs/sec"
+      description: "Rate at which queue jobs are processed"
+    - name: "max_queue_depth"
+      unit: "count"
+      description: "Maximum queue depth observed"
+
+# ===========================================================================
+# SECTION 4: Thresholds & SLAs
+# ===========================================================================
+
+slas:
+  # API Latency SLAs
+  api_latency:
+    p50: "300ms"  # Median response time
+    p95: "500ms"  # 95th percentile
+    p99: "1000ms" # 99th percentile
+    max: "2000ms" # Absolute maximum
+
+  # Availability SLAs
+  availability:
+    success_rate: "99.9%"
+    error_rate: "< 0.1%"
+    uptime: "99.95%"
+
+  # Throughput SLAs
+  throughput:
+    min_rps: 100
+    sustainable_load: 1000  # requests/sec at which system is stable
+
+  # Queue Performance SLAs
+  queue:
+    max_depth: 100
+    max_processing_delay: "2 minutes"
+    processing_rate: "> 10 jobs/sec"
+
+  # Email Delivery SLAs
+  email:
+    delivery_latency_p95: "2 minutes"
+    delivery_success_rate: "99.5%"
+    bounce_rate: "< 0.5%"
+
+  # Resource Constraints
+  resources:
+    max_cpu_usage: "80%"
+    max_memory_usage: "2048 MB"
+    max_connections: 100
+    connection_pool_safety_margin: "10%"
+
+# ===========================================================================
+# SECTION 5: Execution Instructions
+# ===========================================================================
+
+execution:
+  prerequisites:
+    - "Install K6: https://k6.io/docs/getting-started/installation/"
+    - "Set environment variables (see below)"
+    - "Ensure test environment is isolated"
+    - "Verify database backups exist"
+    - "Configure monitoring dashboards (optional: InfluxDB + Grafana)"
+
+  environment_variables:
+    # =========================================================================
+    # REQUIRED - Test Credentials
+    # =========================================================================
+    # Setup guide: docs/LOAD_TEST_SETUP.md
+
+    BASE_URL: "http://localhost:3000 or https://staging.taskflow.app"
+    # Endpoint URL to test against
+
+    AUTH_TOKEN: "Bearer {valid_jwt_token}"
+    # JWT token for authentication
+    # Generate: node scripts/generate-test-tokens.js
+    # Expires: Usually 1 hour - regenerate before long tests
+    # Create test users in Supabase, then generate token with above script
+
+    TEST_USER_ID: "{user_id_for_testing}"
+    # UUID of test user from Supabase
+    # Get from: SELECT id FROM auth.users WHERE email LIKE 'test-user-%'
+    # Multiple test users recommended for concurrent testing
+
+    ORGANIZATION_ID: "{org_id_for_testing}"
+    # UUID of test organization
+    # Get from: SELECT id FROM public.organizations LIMIT 1
+    # Ensure TEST_USER_ID belongs to this organization
+
+    # =========================================================================
+    # OPTIONAL - Test Data Configuration
+    # =========================================================================
+
+    # Multiple test user tokens for concurrent load (up to 50 VUs per token)
+    # AUTH_TOKEN_1: "Bearer {jwt_token_user_1}"
+    # AUTH_TOKEN_2: "Bearer {jwt_token_user_2}"
+    # AUTH_TOKEN_3: "Bearer {jwt_token_user_3}"
+
+    # Load test parameters
+    # K6_VUS: "50"              # Virtual users
+    # K6_DURATION: "5m"         # Duration (use scenario configuration instead)
+
+    # Optional monitoring integrations
+    # INFLUXDB_ADDR: "http://localhost:8086"
+    # INFLUXDB_USER: "admin"
+    # INFLUXDB_PASSWORD: "{password}"
+    # GRAFANA_URL: "http://localhost:3000"
+
+  quick_start:
+    - name: "Run baseline test"
+      command: "k6 run load-test.js -s baseline"
+    - name: "Run ramp-up test"
+      command: "k6 run load-test.js -s ramp_up"
+    - name: "Run spike test"
+      command: "k6 run load-test.js -s spike"
+    - name: "Run stress test"
+      command: "k6 run load-test.js -s stress"
+    - name: "Run endurance test (60 min)"
+      command: "k6 run load-test.js -s endurance"
+    - name: "Run email delivery test"
+      command: "k6 run load-test.js -s email_delivery"
+
+  scaling_options:
+    # Run test with custom VU count
+    - command: "k6 run --vus 500 --duration 5m load-test.js"
+
+    # Run with custom stage
+    - command: "k6 run --stage baseline --vus 20 load-test.js"
+
+    # Run with metrics output
+    - command: "k6 run --out csv=results.csv load-test.js"
+    - command: "k6 run --out json=results.json load-test.js"
+
+  advanced_configuration:
+    # InfluxDB integration (for live dashboards)
+    influxdb_integration: |
+      k6 run \
+        -o experimental-prometheus-rw \
+        --tag testid=baseline_001 \
+        --tag environment=staging \
+        load-test.js
+
+    # HTML Report generation
+    html_report: |
+      k6 run --out html=report.html load-test.js
+
+    # Distributed testing (multiple agents)
+    distributed: |
+      # Start coordinator
+      k6 cloud run load-test.js
+
+      # Or use cloud execution
+      k6 cloud --vus 1000 load-test.js
+
+# ===========================================================================
+# SECTION 6: Analysis & Reporting Guide
+# ===========================================================================
+
+analysis:
+  interpreting_results:
+    latency:
+      description: "Response time distribution"
+      good: "p95 < 500ms, p99 < 1s"
+      warning: "p95 500-800ms, p99 1-2s"
+      critical: "p95 > 800ms or p99 > 2s"
+      action: "Identify slow endpoints, add caching, optimize queries"
+
+    error_rate:
+      description: "Percentage of failed requests"
+      good: "< 0.1%"
+      warning: "0.1-1%"
+      critical: "> 1%"
+      action: "Debug error logs, check resource limits, scale up"
+
+    throughput:
+      description: "Requests per second the system handles"
+      calculation: "total_requests / test_duration"
+      action: "Compare against expected capacity"
+
+    resource_usage:
+      cpu:
+        good: "< 50%"
+        warning: "50-75%"
+        critical: "> 75%"
+      memory:
+        good: "< 50% of available"
+        warning: "50-75% of available"
+        critical: "> 75% of available"
+        action: "Look for memory leaks, optimize algorithms"
+      database_connections:
+        good: "< 50% of pool"
+        warning: "50-75% of pool"
+        critical: "> 75% of pool"
+        action: "Increase connection pool, optimize queries"
+
+  identifying_bottlenecks:
+    method_1:
+      - "Compare endpoint latencies"
+      - "Identify slowest endpoints"
+      - "Check database query performance"
+      - "Review external API calls"
+      - "Look for serialization overhead"
+
+    method_2:
+      - "Monitor resource usage correlation"
+      - "When CPU spikes, check for busy-loops"
+      - "When memory grows, look for leaks"
+      - "When connections max out, increase pool size"
+
+    method_3:
+      - "Analyze error patterns"
+      - "Are errors concentrated on specific endpoints?"
+      - "Do errors correlate with resource exhaustion?"
+      - "Are there cascading failures?"
+
+    method_4:
+      - "Review database metrics"
+      - "Query execution time"
+      - "Lock contention"
+      - "Connection utilization"
+      - "Cache hit rates"
+
+  regression_detection:
+    process:
+      1. "Establish baseline results"
+      2. "Store baseline in version control"
+      3. "Run tests regularly (nightly/weekly)"
+      4. "Compare new results against baseline"
+      5. "Alert if metrics degrade > 10%"
+      6. "Investigate regressions before deployment"
+
+    comparison_metrics:
+      - "p95 latency (main indicator)"
+      - "error_rate"
+      - "peak_memory"
+      - "max_connections"
+
+  capacity_planning:
+    process:
+      1. "Run stress test to find breaking point"
+      2. "Calculate sustainable load (60-70% of breaking point)"
+      3. "Factor in peak/off-peak ratios (typically 2-3x)"
+      4. "Plan infrastructure to handle 2x sustainable load"
+      5. "Document capacity in ops runbook"
+
+    example:
+      breaking_point: "1000 RPS"
+      sustainable_load: "600 RPS (60%)"
+      expected_peak: "1800 RPS (3x baseline)"
+      planned_capacity: "3600 RPS (2x peak)"
+
+# ===========================================================================
+# SECTION 7: Output Formats & Reporting
+# ===========================================================================
+
+output:
+  formats:
+    - "text/summary" # Console output summary
+    - "json"         # Machine-readable JSON
+    - "csv"          # Spreadsheet format
+    - "html"         # Interactive HTML report
+    - "prometheus"   # Prometheus metrics format
+
+  report_sections:
+    - "Executive Summary (key metrics)"
+    - "Test Configuration (what was tested)"
+    - "Results (detailed metrics)"
+    - "Resource Usage (CPU, memory, connections)"
+    - "Error Analysis (detailed breakdown)"
+    - "Recommendations (next steps)"
+
+  retention:
+    - "Keep all raw results for 90 days"
+    - "Archive baseline results in git"
+    - "Document in PERF_RESULTS.md"
+
+# ===========================================================================
+# SECTION 8: Scheduling & CI/CD Integration
+# ===========================================================================
+
+scheduling:
+  baseline_test: "daily at 2 AM UTC"
+  stress_test: "weekly on Monday 3 AM UTC"
+  endurance_test: "monthly on 1st at 4 AM UTC"
+  regression_test: "before each production deployment"
+
+  ci_cd_integration:
+    github_actions: |
+      - name: Run load tests
+        run: |
+          k6 run --vus 100 --duration 5m load-test.js
+
+        - name: Check thresholds
+          if: "failure()"
+          run: echo "Load test failed - check performance regression"
+
+    gitlab_ci: |
+      load_test:
+        stage: performance
+        script:
+          - k6 run --vus 100 --duration 5m load-test.js
+        artifacts:
+          paths:
+            - results.json
+
+# ===========================================================================
+# SECTION 9: References & Documentation
+# ===========================================================================
+
+references:
+  k6_documentation: "https://k6.io/docs/"
+  k6_best_practices: "https://k6.io/docs/testing-guides/running-large-tests/"
+  sla_benchmarks: "https://www.akamai.com/us/en/about/our-thinking/state-of-the-internet-report/"
+
+support:
+  - "K6 Discord: https://community.grafana.com/"
+  - "Performance Testing Guide: docs/PERFORMANCE_TESTING.md"
+  - "Monitoring Setup: docs/MONITORING.md"
+  - "On-Call Runbook: docs/PERFORMANCE_RUNBOOK.md"

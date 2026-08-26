@@ -1,0 +1,1415 @@
+{
+  "$schema": "https://taskflow.local/ops/schemas/metrics-dashboard-v1.json",
+  "version": "1.0.0",
+  "lastUpdated": "2026-08-18T00:00:00Z",
+  "description": "Comprehensive metrics dashboard configuration for TaskFlow Notification System",
+  "environment": "production",
+
+  "schemas": {
+    "dashboard": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["id", "name", "type", "platform", "widgets"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Unique dashboard identifier (snake_case)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Display name for dashboard"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["executive", "operations", "performance", "security", "business"],
+          "description": "Dashboard category/type"
+        },
+        "platform": {
+          "type": "string",
+          "enum": ["vercel", "datadog", "custom"],
+          "description": "Platform where dashboard is hosted"
+        },
+        "refreshInterval": {
+          "type": "integer",
+          "minimum": 5,
+          "description": "Refresh interval in seconds"
+        },
+        "widgets": {
+          "type": "array",
+          "description": "Array of dashboard widgets"
+        },
+        "alertsMapping": {
+          "type": "array",
+          "description": "Alerts tied to this dashboard"
+        }
+      }
+    },
+    "metric": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["id", "name", "type", "unit"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Metric identifier (snake_case)"
+        },
+        "name": {
+          "type": "string",
+          "description": "Human-readable metric name"
+        },
+        "type": {
+          "type": "string",
+          "enum": ["counter", "gauge", "histogram", "timer"],
+          "description": "Metric type"
+        },
+        "unit": {
+          "type": "string",
+          "description": "Unit of measurement (count, ms, %, etc.)"
+        },
+        "description": {
+          "type": "string",
+          "description": "Metric description and calculation method"
+        },
+        "aggregation": {
+          "type": "string",
+          "enum": ["sum", "avg", "p50", "p95", "p99", "max", "min"],
+          "description": "Default aggregation method"
+        },
+        "labels": {
+          "type": "object",
+          "description": "Optional labels for metric dimensions"
+        }
+      }
+    },
+    "alert": {
+      "$schema": "http://json-schema.org/draft-07/schema#",
+      "type": "object",
+      "required": ["id", "name", "metric", "condition"],
+      "properties": {
+        "id": {
+          "type": "string",
+          "description": "Alert identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Alert display name"
+        },
+        "metric": {
+          "type": "string",
+          "description": "Metric ID this alert monitors"
+        },
+        "condition": {
+          "type": "object",
+          "description": "Trigger condition"
+        },
+        "dashboard": {
+          "type": "string",
+          "description": "Dashboard ID this alert maps to"
+        },
+        "widget": {
+          "type": "string",
+          "description": "Specific widget on dashboard"
+        }
+      }
+    }
+  },
+
+  "platforms": {
+    "vercel": {
+      "name": "Vercel Analytics",
+      "description": "Native Vercel analytics and monitoring",
+      "type": "native",
+      "enabled": true,
+      "credentials": {
+        "project": "taskflow-kanban-prototype",
+        "team": "personal",
+        "region": "us-east-1"
+      },
+      "metrics": [
+        {
+          "id": "core_web_vitals_lcp",
+          "name": "Largest Contentful Paint (LCP)",
+          "type": "gauge",
+          "unit": "ms",
+          "description": "Time from navigation start to when largest contentful element is painted",
+          "thresholds": {
+            "good": "0-2500",
+            "needsImprovement": "2500-4000",
+            "poor": "4000+"
+          },
+          "trackingPageEvents": true
+        },
+        {
+          "id": "core_web_vitals_fid",
+          "name": "First Input Delay (FID)",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "Time from user input to browser response",
+          "percentiles": ["p50", "p75", "p95", "p99"]
+        },
+        {
+          "id": "core_web_vitals_cls",
+          "name": "Cumulative Layout Shift (CLS)",
+          "type": "gauge",
+          "unit": "score",
+          "description": "Visual stability score (0-1, lower is better)",
+          "thresholds": {
+            "good": "0-0.1",
+            "needsImprovement": "0.1-0.25",
+            "poor": "0.25+"
+          }
+        },
+        {
+          "id": "api_endpoint_latency",
+          "name": "API Endpoint Latency",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "Response time for all API endpoints",
+          "percentiles": ["p50", "p95", "p99"],
+          "dimensions": ["endpoint", "method"]
+        },
+        {
+          "id": "deployment_frequency",
+          "name": "Deployment Frequency",
+          "type": "counter",
+          "unit": "deployments/day",
+          "description": "Number of successful deployments per day"
+        },
+        {
+          "id": "build_time_trend",
+          "name": "Build Time Trend",
+          "type": "gauge",
+          "unit": "seconds",
+          "description": "Time to build and deploy",
+          "aggregation": "avg"
+        }
+      ]
+    },
+    "datadog": {
+      "name": "Datadog",
+      "description": "Optional Datadog monitoring and alerting platform",
+      "type": "external",
+      "enabled": false,
+      "integrationMethod": "optional",
+      "setupDocumentation": "https://docs.datadoghq.com/agent/",
+      "apiEndpoint": "https://api.datadoghq.com/api/v1",
+      "credentials": {
+        "apiKeyEnvVar": "DATADOG_API_KEY",
+        "appKeyEnvVar": "DATADOG_APP_KEY",
+        "siteParameter": "datadoghq.com"
+      },
+      "metrics": [
+        {
+          "id": "email_delivery_latency_p50",
+          "name": "Email Delivery Latency (P50)",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "50th percentile email send time",
+          "metricPath": "taskflow.email.delivery_latency"
+        },
+        {
+          "id": "email_delivery_latency_p95",
+          "name": "Email Delivery Latency (P95)",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "95th percentile email send time"
+        },
+        {
+          "id": "email_delivery_latency_p99",
+          "name": "Email Delivery Latency (P99)",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "99th percentile email send time"
+        },
+        {
+          "id": "api_response_time_by_endpoint",
+          "name": "API Response Time by Endpoint",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "Response time distribution per endpoint",
+          "aggregation": "avg",
+          "dimensions": ["endpoint", "method", "status"]
+        },
+        {
+          "id": "job_queue_depth",
+          "name": "Job Queue Depth Over Time",
+          "type": "gauge",
+          "unit": "jobs",
+          "description": "Number of pending jobs in notification queue",
+          "alertThresholds": {
+            "warning": 100,
+            "critical": 500
+          }
+        },
+        {
+          "id": "error_rate_trend",
+          "name": "Error Rate Trend",
+          "type": "gauge",
+          "unit": "%",
+          "description": "Percentage of failed requests over time",
+          "aggregation": "avg"
+        },
+        {
+          "id": "success_rate_tracking",
+          "name": "Success Rate Tracking",
+          "type": "gauge",
+          "unit": "%",
+          "description": "Percentage of successful notification deliveries",
+          "aggregation": "avg"
+        },
+        {
+          "id": "redis_latency_heatmap",
+          "name": "Redis Latency Heatmap",
+          "type": "histogram",
+          "unit": "ms",
+          "description": "Redis operation latency distribution",
+          "percentiles": ["p50", "p90", "p95", "p99"]
+        },
+        {
+          "id": "gmail_api_availability",
+          "name": "Gmail API Availability",
+          "type": "gauge",
+          "unit": "%",
+          "description": "Percentage of successful Gmail API calls",
+          "alertThresholds": {
+            "warning": 95,
+            "critical": 90
+          }
+        },
+        {
+          "id": "rls_violation_attempts",
+          "name": "RLS Violation Attempts",
+          "type": "counter",
+          "unit": "attempts",
+          "description": "Number of attempted Row-Level Security policy violations",
+          "alertThresholds": {
+            "warning": 10,
+            "critical": 50
+          }
+        }
+      ]
+    }
+  },
+
+  "customMetrics": {
+    "namespace": "taskflow.notifications",
+    "type": "time-series",
+    "retention": "90d",
+    "metrics": [
+      {
+        "id": "notification_email_sent",
+        "name": "Emails Sent",
+        "type": "counter",
+        "unit": "count/min",
+        "description": "Number of notification emails sent per minute",
+        "aggregation": "sum",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"],
+          "channel": ["email", "in_app"],
+          "status": ["success", "pending"]
+        },
+        "sampleRate": 1.0,
+        "exemplars": true
+      },
+      {
+        "id": "notification_email_failed",
+        "name": "Failed Email Sends",
+        "type": "counter",
+        "unit": "count/min",
+        "description": "Number of failed email send attempts per minute",
+        "aggregation": "sum",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"],
+          "failureReason": ["timeout", "rate_limit", "auth_error", "invalid_recipient", "gmail_api_error", "preference_disabled"],
+          "retryCount": ["0", "1", "2", "3+"]
+        },
+        "sampleRate": 1.0
+      },
+      {
+        "id": "api_request_duration",
+        "name": "API Request Duration",
+        "type": "histogram",
+        "unit": "ms",
+        "description": "Time taken to process API requests",
+        "aggregation": "avg",
+        "dimensions": {
+          "endpoint": [
+            "/api/notifications",
+            "/api/notifications/preferences",
+            "/api/notifications/[id]",
+            "/api/notifications/mark-read",
+            "/api/admin/notification-preferences"
+          ],
+          "method": ["GET", "POST", "PUT", "DELETE"],
+          "status": ["2xx", "4xx", "5xx"]
+        },
+        "percentiles": ["p50", "p75", "p90", "p95", "p99"],
+        "buckets": [10, 50, 100, 500, 1000, 5000]
+      },
+      {
+        "id": "job_queue_depth",
+        "name": "Job Queue Depth",
+        "type": "gauge",
+        "unit": "jobs",
+        "description": "Number of pending notification jobs in queue",
+        "aggregation": "avg",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"],
+          "queueStatus": ["pending", "active", "delayed", "failed"]
+        },
+        "freshness": "5s"
+      },
+      {
+        "id": "redis_latency_ms",
+        "name": "Redis Latency",
+        "type": "histogram",
+        "unit": "ms",
+        "description": "Latency of Redis operations for queue management",
+        "aggregation": "avg",
+        "dimensions": {
+          "operation": ["get", "set", "lpush", "lpop", "hget", "hset"],
+          "keyType": ["job", "preference", "thread"]
+        },
+        "percentiles": ["p50", "p90", "p95", "p99"],
+        "buckets": [1, 5, 10, 50, 100, 500]
+      },
+      {
+        "id": "gmail_api_calls",
+        "name": "Gmail API Calls",
+        "type": "counter",
+        "unit": "count",
+        "description": "Total Gmail API method invocations",
+        "aggregation": "sum",
+        "dimensions": {
+          "method": ["send", "get", "list", "watch", "history"],
+          "status": ["success", "error"],
+          "errorCode": ["400", "401", "403", "404", "429", "500", "503"]
+        }
+      },
+      {
+        "id": "user_preferences_updated",
+        "name": "User Preferences Updated",
+        "type": "counter",
+        "unit": "count",
+        "description": "Number of notification preference changes",
+        "aggregation": "sum",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"],
+          "channel": ["email", "in_app"],
+          "enabledStatus": ["enabled", "disabled"]
+        }
+      },
+      {
+        "id": "notification_in_app_created",
+        "name": "In-App Notifications Created",
+        "type": "counter",
+        "unit": "count/min",
+        "description": "Number of in-app notifications created per minute",
+        "aggregation": "sum",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"]
+        }
+      },
+      {
+        "id": "notification_read_rate",
+        "name": "Notification Read Rate",
+        "type": "gauge",
+        "unit": "%",
+        "description": "Percentage of notifications marked as read within 24 hours",
+        "aggregation": "avg",
+        "dimensions": {
+          "eventType": ["task_assigned", "task_mentioned", "status_changed", "due_soon", "comment_added", "project_created", "member_invited", "task_completed"],
+          "timeWindow": ["1h", "24h", "7d"]
+        }
+      },
+      {
+        "id": "email_thread_creation",
+        "name": "Email Thread Creation",
+        "type": "counter",
+        "unit": "count",
+        "description": "Email threads created for conversation grouping",
+        "aggregation": "sum"
+      },
+      {
+        "id": "failed_job_retry_count",
+        "name": "Failed Job Retries",
+        "type": "counter",
+        "unit": "count",
+        "description": "Number of job retry attempts",
+        "aggregation": "sum",
+        "dimensions": {
+          "failureReason": ["timeout", "rate_limit", "auth_error", "invalid_recipient", "gmail_api_error"],
+          "attemptNumber": ["1", "2", "3"]
+        }
+      }
+    ]
+  },
+
+  "dashboards": {
+    "executive": {
+      "id": "executive_overview",
+      "name": "Executive Dashboard - Notification System Health",
+      "type": "executive",
+      "platform": "vercel",
+      "description": "High-level system health and key performance indicators",
+      "audience": "executives, product managers",
+      "refreshInterval": 300,
+      "timeRange": "24h",
+      "widgets": [
+        {
+          "id": "email_sent_24h",
+          "title": "Emails Sent (24h)",
+          "type": "stat",
+          "metric": "notification_email_sent",
+          "aggregation": "sum",
+          "threshold": {
+            "good": 1000,
+            "warning": 500
+          },
+          "displayFormat": "number"
+        },
+        {
+          "id": "system_availability",
+          "title": "System Availability",
+          "type": "stat",
+          "metric": "gmail_api_availability",
+          "aggregation": "avg",
+          "threshold": {
+            "good": 99.9,
+            "warning": 99
+          },
+          "displayFormat": "percentage"
+        },
+        {
+          "id": "delivery_success_rate",
+          "title": "Delivery Success Rate",
+          "type": "stat",
+          "metric": "success_rate_tracking",
+          "aggregation": "avg",
+          "threshold": {
+            "good": 99,
+            "warning": 95
+          },
+          "displayFormat": "percentage"
+        },
+        {
+          "id": "queue_health",
+          "title": "Queue Health (Pending Jobs)",
+          "type": "gauge",
+          "metric": "job_queue_depth",
+          "aggregation": "max",
+          "threshold": {
+            "good": [0, 50],
+            "warning": [50, 200],
+            "critical": [200, 1000]
+          }
+        },
+        {
+          "id": "alerts_firing",
+          "title": "Active Alerts",
+          "type": "stat",
+          "alertFilter": "firing",
+          "displayFormat": "count",
+          "drillDown": true
+        },
+        {
+          "id": "deployment_trend",
+          "title": "Deployments (7d Trend)",
+          "type": "line-chart",
+          "metric": "deployment_frequency",
+          "timeRange": "7d",
+          "aggregation": "sum"
+        }
+      ],
+      "alertsMapping": [
+        {
+          "alertId": "email_send_failures_spike",
+          "widgetId": "email_sent_24h",
+          "severity": "critical"
+        },
+        {
+          "alertId": "gmail_api_unavailable",
+          "widgetId": "system_availability",
+          "severity": "critical"
+        },
+        {
+          "alertId": "queue_depth_critical",
+          "widgetId": "queue_health",
+          "severity": "critical"
+        }
+      ]
+    },
+    "operations": {
+      "id": "operations_detailed",
+      "name": "Operations Dashboard - Detailed Metrics",
+      "type": "operations",
+      "platform": "datadog",
+      "description": "Detailed operational metrics for on-call engineers",
+      "audience": "on-call engineers, operations team",
+      "refreshInterval": 60,
+      "timeRange": "1h",
+      "widgets": [
+        {
+          "id": "email_latency_distribution",
+          "title": "Email Send Latency (P50/P95/P99)",
+          "type": "line-chart",
+          "metrics": [
+            "email_delivery_latency_p50",
+            "email_delivery_latency_p95",
+            "email_delivery_latency_p99"
+          ],
+          "aggregation": "avg",
+          "timeRange": "1h"
+        },
+        {
+          "id": "api_response_time_by_endpoint",
+          "title": "API Response Time by Endpoint",
+          "type": "bar-chart",
+          "metric": "api_response_time_by_endpoint",
+          "groupBy": "endpoint",
+          "aggregation": "avg",
+          "threshold": {
+            "warning": 500,
+            "critical": 1000
+          }
+        },
+        {
+          "id": "job_queue_processing_rate",
+          "title": "Job Queue - Processing Rate",
+          "type": "area-chart",
+          "metrics": [
+            "job_queue_depth",
+            "notification_email_sent"
+          ],
+          "aggregation": "avg",
+          "timeRange": "1h"
+        },
+        {
+          "id": "error_rate_trend_detailed",
+          "title": "Error Rate Trend",
+          "type": "line-chart",
+          "metric": "error_rate_trend",
+          "aggregation": "avg",
+          "timeRange": "1h",
+          "threshold": {
+            "warning": 1,
+            "critical": 5
+          }
+        },
+        {
+          "id": "redis_latency_distribution",
+          "title": "Redis Latency Distribution",
+          "type": "heatmap",
+          "metric": "redis_latency_ms",
+          "percentiles": ["p50", "p90", "p95", "p99"],
+          "timeRange": "1h"
+        },
+        {
+          "id": "failed_jobs_table",
+          "title": "Failed Jobs (Last Hour)",
+          "type": "table",
+          "metric": "notification_email_failed",
+          "groupBy": ["failureReason", "eventType"],
+          "columns": ["time", "eventType", "failureReason", "count"],
+          "limit": 20,
+          "sort": "time_desc"
+        },
+        {
+          "id": "rls_violations_monitoring",
+          "title": "RLS Violation Attempts",
+          "type": "line-chart",
+          "metric": "rls_violation_attempts",
+          "aggregation": "sum",
+          "timeRange": "1h",
+          "alertThreshold": 10
+        },
+        {
+          "id": "gmail_api_errors",
+          "title": "Gmail API Errors",
+          "type": "bar-chart",
+          "metric": "gmail_api_calls",
+          "filter": "status:error",
+          "groupBy": "errorCode",
+          "aggregation": "sum"
+        }
+      ],
+      "alertsMapping": [
+        {
+          "alertId": "email_latency_p95_high",
+          "widgetId": "email_latency_distribution",
+          "severity": "warning"
+        },
+        {
+          "alertId": "api_response_time_high",
+          "widgetId": "api_response_time_by_endpoint",
+          "severity": "warning"
+        },
+        {
+          "alertId": "error_rate_spiking",
+          "widgetId": "error_rate_trend_detailed",
+          "severity": "critical"
+        }
+      ]
+    },
+    "performance": {
+      "id": "performance_metrics",
+      "name": "Performance Dashboard - Latency & Throughput",
+      "type": "performance",
+      "platform": "vercel",
+      "description": "Real-time performance metrics and throughput analysis",
+      "audience": "performance engineers, platform team",
+      "refreshInterval": 30,
+      "timeRange": "1h",
+      "widgets": [
+        {
+          "id": "core_web_vitals_lcp",
+          "title": "Largest Contentful Paint (LCP)",
+          "type": "gauge",
+          "metric": "core_web_vitals_lcp",
+          "aggregation": "avg",
+          "threshold": {
+            "good": [0, 2500],
+            "needsImprovement": [2500, 4000],
+            "poor": [4000, null]
+          }
+        },
+        {
+          "id": "core_web_vitals_fid",
+          "title": "First Input Delay (FID)",
+          "type": "histogram",
+          "metric": "core_web_vitals_fid",
+          "percentiles": ["p50", "p95", "p99"],
+          "aggregation": "avg"
+        },
+        {
+          "id": "core_web_vitals_cls",
+          "title": "Cumulative Layout Shift (CLS)",
+          "type": "gauge",
+          "metric": "core_web_vitals_cls",
+          "aggregation": "avg",
+          "threshold": {
+            "good": [0, 0.1],
+            "needsImprovement": [0.1, 0.25],
+            "poor": [0.25, 1]
+          }
+        },
+        {
+          "id": "api_endpoint_latency_distribution",
+          "title": "API Endpoint Latency Distribution",
+          "type": "line-chart",
+          "metric": "api_endpoint_latency",
+          "dimensions": {
+            "endpoint": [
+              "/api/notifications",
+              "/api/notifications/preferences"
+            ]
+          },
+          "percentiles": ["p50", "p95", "p99"],
+          "aggregation": "avg",
+          "timeRange": "1h"
+        },
+        {
+          "id": "throughput_vs_latency",
+          "title": "Throughput vs Latency",
+          "type": "scatter-chart",
+          "metrics": [
+            "notification_email_sent",
+            "api_request_duration"
+          ],
+          "xAxis": "notification_email_sent",
+          "yAxis": "api_request_duration",
+          "timeRange": "1h"
+        },
+        {
+          "id": "build_time_trend",
+          "title": "Build Time Trend (7d)",
+          "type": "line-chart",
+          "metric": "build_time_trend",
+          "aggregation": "avg",
+          "timeRange": "7d",
+          "threshold": {
+            "warning": 120,
+            "critical": 180
+          }
+        },
+        {
+          "id": "p99_latency_by_endpoint",
+          "title": "P99 Latency by Endpoint",
+          "type": "bar-chart",
+          "metric": "api_request_duration",
+          "aggregation": "p99",
+          "groupBy": "endpoint",
+          "limit": 10,
+          "sort": "value_desc"
+        }
+      ],
+      "alertsMapping": [
+        {
+          "alertId": "lcp_degradation",
+          "widgetId": "core_web_vitals_lcp",
+          "severity": "warning"
+        },
+        {
+          "alertId": "api_latency_spike",
+          "widgetId": "api_endpoint_latency_distribution",
+          "severity": "critical"
+        }
+      ]
+    },
+    "security": {
+      "id": "security_monitoring",
+      "name": "Security Dashboard - Auth & Compliance",
+      "type": "security",
+      "platform": "datadog",
+      "description": "Security monitoring for RLS, authentication, and compliance",
+      "audience": "security team, compliance officers",
+      "refreshInterval": 120,
+      "timeRange": "24h",
+      "widgets": [
+        {
+          "id": "rls_violation_overview",
+          "title": "RLS Violations (24h)",
+          "type": "stat",
+          "metric": "rls_violation_attempts",
+          "aggregation": "sum",
+          "alertThreshold": {
+            "warning": 10,
+            "critical": 50
+          }
+        },
+        {
+          "id": "rls_violation_trend",
+          "title": "RLS Violation Trend",
+          "type": "line-chart",
+          "metric": "rls_violation_attempts",
+          "aggregation": "sum",
+          "timeRange": "24h"
+        },
+        {
+          "id": "auth_failures_by_reason",
+          "title": "Auth Failures by Reason",
+          "type": "pie-chart",
+          "metric": "notification_email_failed",
+          "filter": "failureReason:auth_error",
+          "groupBy": "failureReason",
+          "aggregation": "sum"
+        },
+        {
+          "id": "failed_jobs_audit_log",
+          "title": "Failed Jobs Audit Log",
+          "type": "table",
+          "metric": "notification_email_failed",
+          "columns": ["time", "userId", "eventType", "failureReason", "errorMessage"],
+          "limit": 50,
+          "sort": "time_desc",
+          "export": true
+        },
+        {
+          "id": "gmail_api_auth_errors",
+          "title": "Gmail API Auth Errors",
+          "type": "bar-chart",
+          "metric": "gmail_api_calls",
+          "filter": "status:error AND errorCode:(401 OR 403)",
+          "groupBy": "errorCode",
+          "aggregation": "sum"
+        },
+        {
+          "id": "data_access_pattern_anomaly",
+          "title": "Data Access Pattern Anomaly Detection",
+          "type": "line-chart",
+          "metric": "api_request_duration",
+          "anomalyDetection": true,
+          "timeRange": "7d"
+        }
+      ],
+      "alertsMapping": [
+        {
+          "alertId": "rls_violation_spike",
+          "widgetId": "rls_violation_overview",
+          "severity": "critical"
+        },
+        {
+          "alertId": "auth_failure_rate_high",
+          "widgetId": "auth_failures_by_reason",
+          "severity": "critical"
+        }
+      ]
+    },
+    "business": {
+      "id": "business_engagement",
+      "name": "Business Dashboard - User Engagement & Adoption",
+      "type": "business",
+      "platform": "custom",
+      "description": "Business metrics for user engagement and feature adoption",
+      "audience": "product managers, business stakeholders",
+      "refreshInterval": 600,
+      "timeRange": "7d",
+      "widgets": [
+        {
+          "id": "notification_volume_by_type",
+          "title": "Notification Volume by Event Type",
+          "type": "bar-chart",
+          "metric": "notification_email_sent",
+          "groupBy": "eventType",
+          "aggregation": "sum",
+          "timeRange": "7d"
+        },
+        {
+          "id": "email_vs_in_app_channels",
+          "title": "Email vs In-App Channels",
+          "type": "line-chart",
+          "metrics": [
+            "notification_email_sent",
+            "notification_in_app_created"
+          ],
+          "aggregation": "sum",
+          "timeRange": "7d"
+        },
+        {
+          "id": "notification_read_engagement",
+          "title": "Notification Read Rate",
+          "type": "gauge",
+          "metric": "notification_read_rate",
+          "aggregation": "avg",
+          "threshold": {
+            "good": [70, 100],
+            "warning": [40, 70],
+            "poor": [0, 40]
+          }
+        },
+        {
+          "id": "user_preference_changes",
+          "title": "User Preference Changes (24h)",
+          "type": "stat",
+          "metric": "user_preferences_updated",
+          "aggregation": "sum"
+        },
+        {
+          "id": "preference_trends_by_event_type",
+          "title": "Preference Enablement by Event Type",
+          "type": "bar-chart",
+          "metric": "user_preferences_updated",
+          "groupBy": "eventType",
+          "filter": "enabledStatus:enabled",
+          "aggregation": "sum",
+          "timeRange": "30d"
+        },
+        {
+          "id": "feature_adoption_heatmap",
+          "title": "Feature Adoption Heatmap (30d)",
+          "type": "heatmap",
+          "metric": "notification_email_sent",
+          "dimensions": {
+            "x": "eventType",
+            "y": "dayOfWeek"
+          },
+          "aggregation": "sum",
+          "timeRange": "30d"
+        },
+        {
+          "id": "user_cohort_comparison",
+          "title": "User Cohort Comparison",
+          "type": "table",
+          "metrics": [
+            "notification_email_sent",
+            "notification_read_rate",
+            "user_preferences_updated"
+          ],
+          "groupBy": "cohort",
+          "columns": ["cohort", "emailsSent", "readRate", "preferenceChanges", "avgLatency"],
+          "limit": 10
+        }
+      ],
+      "alertsMapping": [
+        {
+          "alertId": "engagement_decline",
+          "widgetId": "email_vs_in_app_channels",
+          "severity": "warning"
+        }
+      ]
+    }
+  },
+
+  "alertsToDashboardMapping": {
+    "schema": {
+      "type": "object",
+      "properties": {
+        "alertId": {
+          "type": "string",
+          "description": "Unique alert identifier"
+        },
+        "name": {
+          "type": "string",
+          "description": "Alert display name"
+        },
+        "metric": {
+          "type": "string",
+          "description": "Metric being monitored"
+        },
+        "condition": {
+          "type": "object",
+          "description": "Alert trigger condition"
+        },
+        "severity": {
+          "type": "string",
+          "enum": ["info", "warning", "critical"]
+        },
+        "dashboards": {
+          "type": "array",
+          "description": "Dashboards this alert is visible on"
+        },
+        "historicalView": {
+          "type": "object",
+          "description": "Time windows for historical comparison"
+        }
+      }
+    },
+    "alerts": [
+      {
+        "alertId": "email_send_failures_spike",
+        "name": "Email Send Failures Spike",
+        "metric": "notification_email_failed",
+        "description": "Alert when email failures exceed threshold",
+        "condition": {
+          "type": "threshold",
+          "metric": "notification_email_failed",
+          "aggregation": "sum",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 50,
+          "evaluationWindow": "1m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "executive_overview",
+          "operations_detailed"
+        ],
+        "affectedWidgets": [
+          "email_sent_24h",
+          "failed_jobs_table"
+        ],
+        "historicalView": {
+          "comparison": ["1h", "24h", "7d"],
+          "baseline": "7d_median"
+        },
+        "escalation": {
+          "enabled": true,
+          "afterMinutes": 15,
+          "channels": ["slack", "pagerduty"]
+        }
+      },
+      {
+        "alertId": "gmail_api_unavailable",
+        "name": "Gmail API Unavailable",
+        "metric": "gmail_api_availability",
+        "description": "Alert when Gmail API availability drops below 95%",
+        "condition": {
+          "type": "threshold",
+          "metric": "gmail_api_availability",
+          "aggregation": "avg",
+          "timeWindow": "5m",
+          "operator": "lessThan",
+          "threshold": 95,
+          "evaluationWindow": "1m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "executive_overview",
+          "operations_detailed",
+          "security_monitoring"
+        ],
+        "affectedWidgets": [
+          "system_availability",
+          "gmail_api_auth_errors"
+        ],
+        "historicalView": {
+          "comparison": ["1h", "24h"],
+          "baseline": "24h_median"
+        },
+        "runbookUrl": "https://taskflow.local/runbooks/gmail-api-unavailable"
+      },
+      {
+        "alertId": "queue_depth_critical",
+        "name": "Job Queue Depth Critical",
+        "metric": "job_queue_depth",
+        "description": "Alert when pending job count exceeds capacity",
+        "condition": {
+          "type": "threshold",
+          "metric": "job_queue_depth",
+          "aggregation": "max",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 500,
+          "evaluationWindow": "2m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "executive_overview",
+          "operations_detailed"
+        ],
+        "affectedWidgets": [
+          "queue_health",
+          "job_queue_processing_rate"
+        ],
+        "historicalView": {
+          "comparison": ["15m", "1h", "24h"],
+          "baseline": "24h_median"
+        }
+      },
+      {
+        "alertId": "email_latency_p95_high",
+        "name": "Email Latency P95 High",
+        "metric": "email_delivery_latency_p95",
+        "description": "Alert when 95th percentile email latency exceeds 5 seconds",
+        "condition": {
+          "type": "threshold",
+          "metric": "email_delivery_latency_p95",
+          "aggregation": "avg",
+          "timeWindow": "10m",
+          "operator": "greaterThan",
+          "threshold": 5000,
+          "evaluationWindow": "2m"
+        },
+        "severity": "warning",
+        "dashboards": [
+          "operations_detailed",
+          "performance_metrics"
+        ],
+        "affectedWidgets": [
+          "email_latency_distribution",
+          "throughput_vs_latency"
+        ],
+        "historicalView": {
+          "comparison": ["1h", "24h", "7d"],
+          "baseline": "7d_p95"
+        }
+      },
+      {
+        "alertId": "api_response_time_high",
+        "name": "API Response Time High",
+        "metric": "api_request_duration",
+        "description": "Alert when API response time exceeds 1 second",
+        "condition": {
+          "type": "threshold",
+          "metric": "api_request_duration",
+          "aggregation": "p95",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 1000,
+          "evaluationWindow": "1m"
+        },
+        "severity": "warning",
+        "dashboards": [
+          "operations_detailed",
+          "performance_metrics"
+        ],
+        "affectedWidgets": [
+          "api_response_time_by_endpoint",
+          "api_endpoint_latency_distribution"
+        ],
+        "historicalView": {
+          "comparison": ["1h", "24h"],
+          "baseline": "24h_p95"
+        }
+      },
+      {
+        "alertId": "error_rate_spiking",
+        "name": "Error Rate Spiking",
+        "metric": "error_rate_trend",
+        "description": "Alert when error rate exceeds 5%",
+        "condition": {
+          "type": "threshold",
+          "metric": "error_rate_trend",
+          "aggregation": "avg",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 5,
+          "evaluationWindow": "2m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "operations_detailed",
+          "performance_metrics"
+        ],
+        "affectedWidgets": [
+          "error_rate_trend_detailed"
+        ],
+        "historicalView": {
+          "comparison": ["15m", "1h", "24h"],
+          "baseline": "7d_median"
+        }
+      },
+      {
+        "alertId": "rls_violation_spike",
+        "name": "RLS Violation Spike",
+        "metric": "rls_violation_attempts",
+        "description": "Alert on potential security breach attempts",
+        "condition": {
+          "type": "threshold",
+          "metric": "rls_violation_attempts",
+          "aggregation": "sum",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 10,
+          "evaluationWindow": "1m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "security_monitoring"
+        ],
+        "affectedWidgets": [
+          "rls_violation_overview",
+          "rls_violation_trend"
+        ],
+        "historicalView": {
+          "comparison": ["1h", "24h", "7d"],
+          "baseline": "7d_median"
+        },
+        "escalation": {
+          "enabled": true,
+          "afterMinutes": 5,
+          "channels": ["slack", "pagerduty", "security-team"]
+        }
+      },
+      {
+        "alertId": "auth_failure_rate_high",
+        "name": "Auth Failure Rate High",
+        "metric": "notification_email_failed",
+        "description": "Alert when auth failures exceed 20% of total failures",
+        "condition": {
+          "type": "composite",
+          "conditions": [
+            {
+              "metric": "notification_email_failed",
+              "filter": "failureReason:auth_error",
+              "aggregation": "sum"
+            }
+          ],
+          "operator": "greaterThan",
+          "threshold": 20,
+          "evaluationWindow": "5m"
+        },
+        "severity": "critical",
+        "dashboards": [
+          "security_monitoring",
+          "operations_detailed"
+        ],
+        "affectedWidgets": [
+          "auth_failures_by_reason",
+          "gmail_api_auth_errors"
+        ]
+      },
+      {
+        "alertId": "engagement_decline",
+        "name": "Notification Engagement Decline",
+        "metric": "notification_read_rate",
+        "description": "Alert when read rate drops below 50%",
+        "condition": {
+          "type": "threshold",
+          "metric": "notification_read_rate",
+          "aggregation": "avg",
+          "timeWindow": "1d",
+          "operator": "lessThan",
+          "threshold": 50,
+          "evaluationWindow": "1h"
+        },
+        "severity": "warning",
+        "dashboards": [
+          "business_engagement"
+        ],
+        "affectedWidgets": [
+          "notification_read_engagement"
+        ],
+        "historicalView": {
+          "comparison": ["7d", "30d"],
+          "baseline": "30d_avg"
+        }
+      },
+      {
+        "alertId": "redis_latency_high",
+        "name": "Redis Latency High",
+        "metric": "redis_latency_ms",
+        "description": "Alert when Redis P99 latency exceeds 100ms",
+        "condition": {
+          "type": "threshold",
+          "metric": "redis_latency_ms",
+          "aggregation": "p99",
+          "timeWindow": "5m",
+          "operator": "greaterThan",
+          "threshold": 100,
+          "evaluationWindow": "2m"
+        },
+        "severity": "warning",
+        "dashboards": [
+          "operations_detailed",
+          "performance_metrics"
+        ],
+        "affectedWidgets": [
+          "redis_latency_distribution"
+        ]
+      }
+    ]
+  },
+
+  "exportConfiguration": {
+    "formats": {
+      "csv": {
+        "enabled": true,
+        "delimiter": ",",
+        "encoding": "utf-8",
+        "includeHeaders": true,
+        "dateFormat": "ISO8601",
+        "numberFormat": "decimal"
+      },
+      "json": {
+        "enabled": true,
+        "prettyPrint": true,
+        "includeMetadata": true
+      },
+      "excel": {
+        "enabled": true,
+        "format": "xlsx",
+        "includeCharts": true,
+        "freezePanes": true
+      }
+    },
+    "emailReports": {
+      "enabled": true,
+      "schedules": [
+        {
+          "id": "daily_executive_digest",
+          "name": "Daily Executive Digest",
+          "dashboardId": "executive_overview",
+          "frequency": "daily",
+          "time": "09:00 UTC",
+          "recipients": ["executives@taskflow.local"],
+          "format": "html",
+          "includeCharts": true,
+          "alertsOnly": false
+        },
+        {
+          "id": "daily_operations_report",
+          "name": "Daily Operations Report",
+          "dashboardId": "operations_detailed",
+          "frequency": "daily",
+          "time": "08:00 UTC",
+          "recipients": ["ops-team@taskflow.local"],
+          "format": "pdf",
+          "includeCharts": true,
+          "includeMetrics": true,
+          "alertsOnly": false
+        },
+        {
+          "id": "hourly_alert_digest",
+          "name": "Hourly Alert Digest",
+          "alertsOnly": true,
+          "frequency": "hourly",
+          "recipients": ["oncall@taskflow.local"],
+          "format": "text",
+          "includeHistory": true
+        },
+        {
+          "id": "weekly_business_report",
+          "name": "Weekly Business Report",
+          "dashboardId": "business_engagement",
+          "frequency": "weekly",
+          "dayOfWeek": "monday",
+          "time": "10:00 UTC",
+          "recipients": ["product-team@taskflow.local"],
+          "format": "html",
+          "includeCharts": true,
+          "historicalComparison": true
+        }
+      ]
+    },
+    "slackIntegration": {
+      "enabled": true,
+      "workspace": "taskflow-team",
+      "channels": {
+        "alerts": "#notifications-alerts",
+        "metrics": "#notifications-metrics",
+        "dailyDigest": "#notifications-digest"
+      },
+      "messaging": {
+        "alertNotifications": true,
+        "alertThrottling": "5m",
+        "metricSnapshots": true,
+        "snapshotFrequency": "1h",
+        "summaryBlocks": true
+      },
+      "interactivity": {
+        "drillDown": true,
+        "acknowledge": true,
+        "quietAlert": true,
+        "viewDashboard": true
+      }
+    },
+    "apiEndpoint": {
+      "enabled": true,
+      "baseUrl": "https://api.taskflow.local/metrics",
+      "endpoints": [
+        {
+          "path": "/dashboards/:dashboardId/export",
+          "method": "GET",
+          "formats": ["csv", "json", "excel"],
+          "queryParams": ["timeRange", "format", "includeMetadata"],
+          "authentication": "bearer_token",
+          "rateLimit": "100 req/min"
+        },
+        {
+          "path": "/metrics/:metricId/timeseries",
+          "method": "GET",
+          "formats": ["csv", "json"],
+          "queryParams": ["start", "end", "aggregation", "dimensions"],
+          "authentication": "bearer_token",
+          "rateLimit": "1000 req/min"
+        },
+        {
+          "path": "/alerts/active",
+          "method": "GET",
+          "formats": ["json"],
+          "queryParams": ["severity", "dashboard"],
+          "authentication": "bearer_token",
+          "rateLimit": "100 req/min"
+        }
+      ],
+      "documentation": "https://docs.taskflow.local/api/metrics"
+    }
+  },
+
+  "integrations": {
+    "pagerduty": {
+      "enabled": true,
+      "integrationKey": "PAGERDUTY_INTEGRATION_KEY",
+      "escalationPolicy": "notifications-oncall",
+      "urgency": "high",
+      "linkAlerts": true
+    },
+    "slack": {
+      "enabled": true,
+      "botToken": "SLACK_BOT_TOKEN",
+      "channels": ["#notifications-alerts", "#notifications-metrics"]
+    },
+    "github": {
+      "enabled": false,
+      "repository": "taskflow-kanban-prototype",
+      "labels": ["notifications", "metrics"],
+      "autoCreateIssues": false
+    }
+  },
+
+  "retention": {
+    "metrics": "90d",
+    "alerts": "365d",
+    "exportedReports": "180d",
+    "emailReportArchive": "365d"
+  },
+
+  "documentation": {
+    "dashboardGuide": "https://taskflow.local/docs/dashboards",
+    "metricDefinitions": "https://taskflow.local/docs/metrics",
+    "alertRunbooks": "https://taskflow.local/runbooks",
+    "apiDocumentation": "https://docs.taskflow.local/api/metrics",
+    "setupGuide": "https://taskflow.local/setup/metrics-dashboard"
+  }
+}

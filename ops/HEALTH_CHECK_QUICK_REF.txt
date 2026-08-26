@@ -1,0 +1,142 @@
+╔════════════════════════════════════════════════════════════════════════════╗
+║         TaskFlow Notification System - Health Check Quick Reference       ║
+╚════════════════════════════════════════════════════════════════════════════╝
+
+QUICK START
+───────────────────────────────────────────────────────────────────────────
+  ./2-health-check-utils.sh              Full health check
+  ./2-health-check-utils.sh watch        Continuous monitoring (30s intervals)
+  ./2-health-check-utils.sh json         JSON output for integrations
+  ./2-health-check-utils.sh --help       Show help text
+
+ENVIRONMENT SETUP
+───────────────────────────────────────────────────────────────────────────
+  export REDIS_URL="redis://:password@host:6379"
+  export SUPABASE_URL="https://project.supabase.co"
+  export SUPABASE_ANON_KEY="key"
+  export GMAIL_SERVICE_ACCOUNT="/path/to/service-account.json"
+  export GOOGLE_CLOUD_PROJECT="gcp-project-id"
+  export PUBSUB_TOPIC="projects/project/topics/name"
+
+HEALTH CHECKS (8 Components)
+───────────────────────────────────────────────────────────────────────────
+  1. Redis               Connection, latency, memory, clients
+  2. Supabase            API connectivity, database queries, tables
+  3. Gmail API           Service account validation, scopes, credentials
+  4. Google Pub/Sub      Topic existence, subscriptions, message lag
+  5. BullMQ Queue        Depth, failed jobs, processing rate
+  6. Notifications DB    Query latency, table stats, record counts
+  7. API Endpoints       /api/health response, JWT validation
+  8. Error Rate          System-wide error aggregation, alerting
+
+EXIT CODES
+───────────────────────────────────────────────────────────────────────────
+  0 = Healthy           All systems operational
+  1 = Warning           Operational but with degradation
+  2 = Critical          One or more services unavailable
+
+PERFORMANCE BASELINES
+───────────────────────────────────────────────────────────────────────────
+  Component       Healthy      Warning      Critical     Timeout
+  ─────────────────────────────────────────────────────────────────────
+  Redis latency   <50ms        <200ms       >200ms       5s
+  Supabase        <500ms       <2000ms      >2000ms      5s
+  Gmail API       N/A          N/A          N/A          N/A
+  Pub/Sub         <500ms       <2000ms      >2000ms      N/A
+  BullMQ queue    <1000jobs    <10000jobs   >10000jobs   N/A
+  Notifications   <500ms       <2000ms      >2000ms      5s
+
+INDIVIDUAL CHECKS
+───────────────────────────────────────────────────────────────────────────
+  ./2-health-check-utils.sh check_redis_health
+  ./2-health-check-utils.sh check_supabase_health
+  ./2-health-check-utils.sh check_gmail_api_health
+  ./2-health-check-utils.sh check_pubsub_health
+  ./2-health-check-utils.sh check_bullmq_health
+  ./2-health-check-utils.sh check_notifications_db
+
+CRON JOBS
+───────────────────────────────────────────────────────────────────────────
+  # Daily check at 2 AM
+  0 2 * * * /path/to/2-health-check-utils.sh >> /var/log/taskflow-health.log 2>&1
+
+  # Hourly check
+  0 * * * * /path/to/2-health-check-utils.sh >> /var/log/taskflow-health.log 2>&1
+
+  # Every 5 minutes with alerts
+  */5 * * * * if ! /path/to/2-health-check-utils.sh >/dev/null 2>&1; then \
+    mail -s "TaskFlow Alert" ops@example.com </var/log/taskflow-health.log; fi
+
+MONITORING INTEGRATIONS
+───────────────────────────────────────────────────────────────────────────
+  Datadog         ./2-health-check-utils.sh json | send to Datadog API
+  Prometheus      Use exit code: $? for metric values
+  CloudWatch      ./2-health-check-utils.sh json | parse & send metrics
+  Grafana         Query endpoint running the script via HTTP
+  Slack           Parse output and send to Slack webhook
+
+JSON OUTPUT FORMAT
+───────────────────────────────────────────────────────────────────────────
+  ./2-health-check-utils.sh json | jq .
+
+  {
+    "timestamp": "2026-08-18T11:29:10Z",
+    "overall_status": 0,
+    "status_name": "healthy",
+    "services": {
+      "redis": {
+        "status": "healthy",
+        "latency_ms": 12,
+        "message": "Connected"
+      },
+      ...
+    }
+  }
+
+TROUBLESHOOTING
+───────────────────────────────────────────────────────────────────────────
+  Error                           Fix
+  ──────────────────────────────────────────────────────────────────────
+  Command not found (redis-cli)   Install: brew install redis / apt-get install redis-tools
+  Bash compatibility error        Run: bash ./2-health-check-utils.sh
+  Connection timeout              Check network: ping host, curl -I https://api
+  Missing env vars                Load: source .env.local
+  Permission denied               Run: chmod +x 2-health-check-utils.sh
+  JSON parse error                Install jq: brew install jq
+
+COLOR INDICATORS
+───────────────────────────────────────────────────────────────────────────
+  ✓ Green   = Healthy, responsive, within thresholds
+  ⚠ Yellow  = Operational but slow/degraded, approaching limits
+  ✗ Red     = Critical, unavailable, exceeding limits
+  ℹ Blue    = Informational, status update
+
+DOCUMENTATION LOCATIONS
+───────────────────────────────────────────────────────────────────────────
+  HEALTH_CHECK_GUIDE.md     Comprehensive guide with examples & integration
+  HEALTH_CHECK_SUMMARY.md   Implementation details & architecture
+  HEALTH_CHECK_QUICK_REF.txt This quick reference card
+  /ops/1-monitoring-alerts.yaml     Full monitoring configuration
+  /ops/3-runbooks.md              Incident response procedures
+
+PERFORMANCE NOTES
+───────────────────────────────────────────────────────────────────────────
+  • All checks complete in <10 seconds
+  • Checks run sequentially (can be parallelized)
+  • Temporary files cleaned up after execution
+  • Safe for production cron jobs
+  • No external dependencies beyond common tools
+
+NEXT STEPS
+───────────────────────────────────────────────────────────────────────────
+  1. Configure environment variables (see ENVIRONMENT SETUP above)
+  2. Test: ./2-health-check-utils.sh
+  3. Schedule: Add to crontab or monitoring system
+  4. Monitor: Set up JSON output to Datadog/CloudWatch
+  5. Alert: Configure alerts on exit code != 0
+
+For detailed help, see: ./2-health-check-utils.sh --help
+For full guide, see: HEALTH_CHECK_GUIDE.md
+
+Last Updated: 2026-08-18
+Status: Production Ready
