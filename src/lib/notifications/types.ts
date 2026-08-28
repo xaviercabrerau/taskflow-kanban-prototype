@@ -61,37 +61,6 @@ export interface NotificationEvent {
   data: Record<string, unknown>;
 }
 
-/**
- * NotificationJob
- * Job queued in BullMQ for processing by Task 4 (processor).
- * Mirrors NotificationEvent with queue-specific metadata.
- */
-export interface NotificationJob {
-  /** Type of event being processed */
-  eventType: EventType;
-
-  /** UUID of recipient user */
-  userId: string;
-
-  /** UUID of organization */
-  organizationId: string;
-
-  /** UUID of task (optional) */
-  taskId?: string;
-
-  /** UUID of actor who triggered event */
-  actorId?: string;
-
-  /** Event-specific data passed through pipeline */
-  eventData: Record<string, unknown>;
-
-  /** Timestamp when job was enqueued (milliseconds) */
-  enqueuedAt: number;
-
-  /** Retry attempt counter (0 = first attempt, incremented on retry) */
-  attempt: number;
-}
-
 // ============================================================================
 // Database Models
 // ============================================================================

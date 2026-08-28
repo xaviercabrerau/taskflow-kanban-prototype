@@ -1,6 +1,4 @@
 // Generado desde el esquema real del proyecto Supabase "taskflow"
-// (mcp__supabase__generate_typescript_types). No editar a mano — regenerar
-// tras cada migración con la misma herramienta.
 export type Json =
   | string
   | number
@@ -13,7 +11,7 @@ export type Database = {
   // Allows to automatically instantiate createClient with right options
   // instead of createClient<Database, { PostgrestVersion: 'XX' }>(URL, KEY)
   __InternalSupabase: {
-    PostgrestVersion: "14.15"
+    PostgrestVersion: "14.5"
   }
   public: {
     Tables: {
@@ -534,6 +532,41 @@ export type Database = {
           },
         ]
       }
+      email_threads: {
+        Row: {
+          created_at: string
+          gmail_thread_id: string | null
+          id: string
+          message_id: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          gmail_thread_id?: string | null
+          id?: string
+          message_id: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          gmail_thread_id?: string | null
+          id?: string
+          message_id?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "email_threads_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       epics: {
         Row: {
           board_id: string
@@ -565,6 +598,33 @@ export type Database = {
             referencedColumns: ["id"]
           },
         ]
+      }
+      failed_jobs: {
+        Row: {
+          created_at: string
+          error_message: string
+          event_type: string | null
+          id: string
+          retry_count: number
+          user_id: string | null
+        }
+        Insert: {
+          created_at?: string
+          error_message: string
+          event_type?: string | null
+          id?: string
+          retry_count?: number
+          user_id?: string | null
+        }
+        Update: {
+          created_at?: string
+          error_message?: string
+          event_type?: string | null
+          id?: string
+          retry_count?: number
+          user_id?: string | null
+        }
+        Relationships: []
       }
       integrations: {
         Row: {
@@ -608,6 +668,7 @@ export type Database = {
         Row: {
           client: string
           created_at: string
+          expires_at: string | null
           id: string
           last_used_at: string | null
           name: string
@@ -620,6 +681,7 @@ export type Database = {
         Insert: {
           client: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           last_used_at?: string | null
           name?: string
@@ -632,6 +694,7 @@ export type Database = {
         Update: {
           client?: string
           created_at?: string
+          expires_at?: string | null
           id?: string
           last_used_at?: string | null
           name?: string
@@ -689,6 +752,101 @@ export type Database = {
             columns: ["sprint_id"]
             isOneToOne: false
             referencedRelation: "sprints"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notification_preferences: {
+        Row: {
+          channel: string
+          created_at: string
+          enabled: boolean
+          event_type: string
+          id: string
+          organization_id: string
+          updated_at: string
+          user_id: string
+        }
+        Insert: {
+          channel: string
+          created_at?: string
+          enabled?: boolean
+          event_type: string
+          id?: string
+          organization_id: string
+          updated_at?: string
+          user_id: string
+        }
+        Update: {
+          channel?: string
+          created_at?: string
+          enabled?: boolean
+          event_type?: string
+          id?: string
+          organization_id?: string
+          updated_at?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notification_preferences_organization_id_fkey"
+            columns: ["organization_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
+      notifications: {
+        Row: {
+          actor_id: string | null
+          body: string | null
+          created_at: string
+          id: string
+          read_at: string | null
+          related_task_id: string | null
+          tenant_id: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Insert: {
+          actor_id?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          related_task_id?: string | null
+          tenant_id: string
+          title: string
+          type: string
+          user_id: string
+        }
+        Update: {
+          actor_id?: string | null
+          body?: string | null
+          created_at?: string
+          id?: string
+          read_at?: string | null
+          related_task_id?: string | null
+          tenant_id?: string
+          title?: string
+          type?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "notifications_related_task_id_fkey"
+            columns: ["related_task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "notifications_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
             referencedColumns: ["id"]
           },
         ]
@@ -1208,6 +1366,32 @@ export type Database = {
           },
         ]
       }
+      template_installs: {
+        Row: {
+          installed_at: string
+          template_id: string
+          user_id: string
+        }
+        Insert: {
+          installed_at?: string
+          template_id: string
+          user_id: string
+        }
+        Update: {
+          installed_at?: string
+          template_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "template_installs_template_id_fkey"
+            columns: ["template_id"]
+            isOneToOne: false
+            referencedRelation: "board_templates"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhooks_inbound: {
         Row: {
           board_id: string
@@ -1252,13 +1436,6 @@ export type Database = {
             columns: ["column_id"]
             isOneToOne: false
             referencedRelation: "board_columns"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "webhooks_inbound_created_by_fkey"
-            columns: ["created_by"]
-            isOneToOne: false
-            referencedRelation: "profiles"
             referencedColumns: ["id"]
           },
           {
@@ -1350,196 +1527,6 @@ export type Database = {
           },
         ]
       }
-      notification_preferences: {
-        Row: {
-          id: string
-          user_id: string
-          organization_id: string
-          event_type: string
-          channel: string
-          enabled: boolean
-          created_at: string
-          updated_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          organization_id: string
-          event_type: string
-          channel: string
-          enabled?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          organization_id?: string
-          event_type?: string
-          channel?: string
-          enabled?: boolean
-          created_at?: string
-          updated_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "notification_preferences_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notification_preferences_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      notifications: {
-        Row: {
-          id: string
-          user_id: string
-          organization_id: string
-          event_type: string
-          task_id: string | null
-          actor_id: string | null
-          message: string
-          read: boolean
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          user_id: string
-          organization_id: string
-          event_type: string
-          task_id?: string | null
-          actor_id?: string | null
-          message: string
-          read?: boolean
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          user_id?: string
-          organization_id?: string
-          event_type?: string
-          task_id?: string | null
-          actor_id?: string | null
-          message?: string
-          read?: boolean
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "notifications_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notifications_organization_id_fkey"
-            columns: ["organization_id"]
-            isOneToOne: false
-            referencedRelation: "organizations"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notifications_task_id_fkey"
-            columns: ["task_id"]
-            isOneToOne: false
-            referencedRelation: "tasks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "notifications_actor_id_fkey"
-            columns: ["actor_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      email_threads: {
-        Row: {
-          id: string
-          task_id: string
-          user_id: string
-          message_id: string
-          gmail_thread_id: string | null
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          task_id: string
-          user_id: string
-          message_id: string
-          gmail_thread_id?: string | null
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          task_id?: string
-          user_id?: string
-          message_id?: string
-          gmail_thread_id?: string | null
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "email_threads_task_id_fkey"
-            columns: ["task_id"]
-            isOneToOne: false
-            referencedRelation: "tasks"
-            referencedColumns: ["id"]
-          },
-          {
-            foreignKeyName: "email_threads_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
-      failed_jobs: {
-        Row: {
-          id: string
-          event_type: string | null
-          user_id: string | null
-          error_message: string
-          retry_count: number
-          created_at: string
-        }
-        Insert: {
-          id?: string
-          event_type?: string | null
-          user_id?: string | null
-          error_message: string
-          retry_count?: number
-          created_at?: string
-        }
-        Update: {
-          id?: string
-          event_type?: string | null
-          user_id?: string | null
-          error_message?: string
-          retry_count?: number
-          created_at?: string
-        }
-        Relationships: [
-          {
-            foreignKeyName: "failed_jobs_user_id_fkey"
-            columns: ["user_id"]
-            isOneToOne: false
-            referencedRelation: "users"
-            referencedColumns: ["id"]
-          },
-        ]
-      }
     }
     Views: {
       [_ in never]: never
@@ -1613,6 +1600,10 @@ export type Database = {
         Args: { bid: string; perm_key: string }
         Returns: boolean
       }
+      has_permission_as: {
+        Args: { bid: string; perm_key: string; uid: string }
+        Returns: boolean
+      }
       increment_template_install_count: {
         Args: { p_template_id: string }
         Returns: undefined
@@ -1629,6 +1620,7 @@ export type Database = {
       }
       is_org_member: { Args: { org_id: string }; Returns: boolean }
       is_org_owner: { Args: { org_id: string }; Returns: boolean }
+      is_safe_webhook_url: { Args: { url: string }; Returns: boolean }
       list_org_members: {
         Args: { org_id: string }
         Returns: {
@@ -1690,7 +1682,11 @@ export type Database = {
       revoke_mcp_session: { Args: { p_session_id: string }; Returns: undefined }
       search_profile_by_email: {
         Args: { p_email: string }
-        Returns: { email: string | null; full_name: string | null; id: string }[]
+        Returns: {
+          email: string
+          full_name: string
+          id: string
+        }[]
       }
       send_notification_email: {
         Args: { p_notification_id: string }

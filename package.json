@@ -20,16 +20,14 @@
     "@supabase/supabase-js": "^2.112.2",
     "@upstash/ratelimit": "^2.0.8",
     "@upstash/redis": "^1.38.2",
-    "@vercel/kv": "^3.0.0",
-    "bullmq": "^3.16.2",
     "google-auth-library": "^9.11.0",
     "googleapis": "^140.0.0",
-    "ioredis": "^5.3.2",
     "jsonwebtoken": "^9.0.3",
     "next": "16.3.0",
     "react": "19.2.8",
     "react-dom": "19.2.8",
-    "react-email": "^6.9.2"
+    "react-email": "^6.9.2",
+    "resend": "^4.0.1"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",

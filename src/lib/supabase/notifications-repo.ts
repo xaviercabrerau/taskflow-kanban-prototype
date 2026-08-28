@@ -13,34 +13,15 @@ export interface AppNotification {
   createdAt: string;
 }
 
-// Some deployments' `notifications` row shape predates the current schema
-// (legacy columns like `type`/`title`/`body`/`related_task_id`/`read_at` may
-// still be present alongside the current ones). This flexible view lets
-// mapRow support both without resorting to `any`.
-interface NotificationRowFlexible {
-  id: string;
-  type?: string;
-  event_type: string;
-  title?: string;
-  body?: string | null;
-  message: string;
-  related_task_id?: string | null;
-  task_id: string | null;
-  read_at?: string | null;
-  read: boolean;
-  created_at: string;
-}
-
 function mapRow(row: Database["public"]["Tables"]["notifications"]["Row"]): AppNotification {
-  const flexRow = row as unknown as NotificationRowFlexible;
   return {
-    id: flexRow.id,
-    type: flexRow.type || flexRow.event_type,
-    title: flexRow.title || 'Notification',
-    body: flexRow.body || flexRow.message || null,
-    relatedTaskId: flexRow.related_task_id || flexRow.task_id,
-    readAt: flexRow.read_at || (flexRow.read ? new Date().toISOString() : null),
-    createdAt: flexRow.created_at,
+    id: row.id,
+    type: row.type,
+    title: row.title,
+    body: row.body,
+    relatedTaskId: row.related_task_id,
+    readAt: row.read_at,
+    createdAt: row.created_at,
   };
 }
 
@@ -60,7 +41,7 @@ export async function fetchNotifications(supabase: TypedClient, userId: string):
 export async function markNotificationRead(supabase: TypedClient, notificationId: string): Promise<void> {
   const { error } = await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ read_at: new Date().toISOString() })
     .eq("id", notificationId);
   if (error) throw error;
 }
@@ -68,9 +49,9 @@ export async function markNotificationRead(supabase: TypedClient, notificationId
 export async function markAllNotificationsRead(supabase: TypedClient, userId: string): Promise<void> {
   const { error } = await supabase
     .from("notifications")
-    .update({ read: true })
+    .update({ read_at: new Date().toISOString() })
     .eq("user_id", userId)
-    .eq("read", false);
+    .is("read_at", null);
   if (error) throw error;
 }
 
