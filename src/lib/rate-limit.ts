@@ -20,14 +20,19 @@ let ratelimit: Ratelimit | null | undefined; // undefined = not yet initialized,
 function getRatelimit(): Ratelimit | null {
   if (ratelimit !== undefined) return ratelimit;
 
-  const url = process.env.UPSTASH_REDIS_REST_URL;
-  const token = process.env.UPSTASH_REDIS_REST_TOKEN;
+  // The Vercel Marketplace "Upstash for Redis" integration (installed
+  // 2026-08-28) provisions KV_REST_API_URL/KV_REST_API_TOKEN, not
+  // UPSTASH_REDIS_REST_URL/UPSTASH_REDIS_REST_TOKEN — it keeps the legacy
+  // Vercel KV env var names for backward compatibility with code written
+  // against the old @vercel/kv product. Accept either naming.
+  const url = process.env.UPSTASH_REDIS_REST_URL || process.env.KV_REST_API_URL;
+  const token = process.env.UPSTASH_REDIS_REST_TOKEN || process.env.KV_REST_API_TOKEN;
 
   if (!url || !token) {
     if (!warnedMissingConfig) {
       console.warn(
-        "[rate-limit] UPSTASH_REDIS_REST_URL / UPSTASH_REDIS_REST_TOKEN are not set — " +
-          "rate limiting is disabled (failing open). See OBSERVABILITY.md for activation steps."
+        "[rate-limit] No Upstash Redis credentials found (checked UPSTASH_REDIS_REST_URL/TOKEN " +
+          "and KV_REST_API_URL/TOKEN) — falling back to the in-memory limiter. See OBSERVABILITY.md."
       );
       warnedMissingConfig = true;
     }

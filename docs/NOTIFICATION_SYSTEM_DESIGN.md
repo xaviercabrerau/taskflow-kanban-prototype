@@ -1,10 +1,20 @@
 # TaskFlow Notification System + Gmail Integration
 ## Design Specification
 
-**Version:** 1.0  
-**Date:** 2026-08-16  
-**Phase:** Semana 3 Punto 6  
-**Status:** Design Approved, Ready for Implementation
+**Version:** 1.0
+**Date:** 2026-08-16
+**Phase:** Semana 3 Punto 6
+**Status:** Partially implemented (2026-08-28) — see
+[`OBSERVABILITY.md`](../OBSERVABILITY.md#6-notification-system--email--in-app)
+for the current, accurate state. Key deviations from this design as
+originally written: the BullMQ worker described in section 1 was never
+implemented (Vercel serverless can't host a persistent queue consumer) —
+replaced by a synchronous send path in `src/lib/notifications/notify.ts`.
+Only 2 of the 8 event types are wired to a real call site today
+(`task_mentioned`, `status_changed`). Sending goes through Resend, not the
+Gmail API — no Google Workspace account exists yet to send/receive via a
+real Gmail mailbox, so the *inbound* reply-parsing half of this design
+(section 5) is entirely unbuilt/blocked, not just unconfigured.
 
 ---
 
@@ -250,15 +260,24 @@ All use BaseLayout with logo + footer + unsubscribe link.
 
 ---
 
-## Success Criteria
+## Success Criteria (original targets — see actual status below each)
 
-✅ 8 event types → email + in-app notifications  
-✅ Gmail replies parsed (`/done`, `/comment`)  
-✅ User preferences per event × channel  
-✅ 45 tests passing  
-✅ <100ms UI notification creation  
-✅ 99.9% email delivery SLA  
+- 8 event types → email + in-app notifications
+  — ⚠️ 2/8 wired (`task_mentioned`, `status_changed`); the other 6 have
+  code support in `notify.ts` but no real call site yet.
+- Gmail replies parsed (`/done`, `/comment`)
+  — ❌ blocked; no Google Workspace account exists to send/receive via.
+  `/api/webhooks/gmail-reply` returns `501`.
+- User preferences per event × channel
+  — ✅ `notification_preferences` table + `/api/admin/notification-preferences`
+  route, both live.
+- 45 tests passing
+  — the notification-specific suite was rewritten around the actual
+  (synchronous, non-BullMQ) implementation; see `notify.test.ts` and the
+  overall count in `OBSERVABILITY.md`.
+- <100ms UI notification creation / 99.9% email delivery SLA
+  — not measured; no traffic at production scale yet (see main README).
 
 ---
 
-**Status:** ✅ Ready for Implementation Plan
+**Status:** Partially implemented — see the status note at the top of this file.

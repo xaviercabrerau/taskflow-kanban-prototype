@@ -30,16 +30,23 @@ cuentas de prueba/piloto, no con tráfico de producción a escala.
 - **Base de datos y backend:** Supabase (Postgres con Row Level Security,
   Auth, Realtime) — ver la sección de migraciones más abajo.
 - **Despliegue:** Vercel, con despliegue automático desde la rama `main`.
+  Dominio de producción: `https://task.conto.ec`.
 - **Drag-and-drop:** `@dnd-kit`.
+- **Notificaciones:** email vía Resend (integración del Vercel Marketplace)
+  + notificaciones in-app en Supabase, con Upstash Redis (también del
+  Marketplace) como backend de KV. Solo 2 de 8 tipos de evento están
+  conectados a un punto real de la app hoy (menciones y cambios de estado,
+  vía triggers de Postgres); el resto existe en código pero no se dispara
+  todavía. El análisis de respuestas por Gmail está bloqueado hasta contar
+  con una cuenta real de Google Workspace. Ver el detalle completo en
+  [`OBSERVABILITY.md`](./OBSERVABILITY.md#6-notification-system--email--in-app).
 - **Observabilidad:** endpoints de salud (`/api/health`, `/api/health/cron`)
   y un cron de alertas (`/api/cron/alert-check`, programado a diario vía
-  `vercel.json`) ya construidos y funcionando. Sentry (`@sentry/nextjs`) está
-  instrumentado en cliente, servidor y edge, pero pendiente de activar: falta
-  crear un proyecto en Sentry y configurar su DSN. El rate limiting del
-  endpoint MCP (`@upstash/ratelimit` + Upstash Redis) también está construido
-  pero pendiente de activar: falta añadir la integración de Upstash en
-  Vercel para que las variables de entorno existan (mientras tanto, falla en
-  modo abierto — el endpoint sigue funcionando sin límite). Ver
+  `vercel.json`) ya construidos y funcionando. El rate limiting del
+  endpoint MCP (`@upstash/ratelimit` + Upstash Redis) está **activo**
+  (Upstash ya integrado vía Marketplace). Sentry (`@sentry/nextjs`) sigue
+  instrumentado en cliente, servidor y edge, pero pendiente de activar:
+  falta crear un proyecto en Sentry y configurar su DSN. Ver
   [`OBSERVABILITY.md`](./OBSERVABILITY.md) para el detalle exacto de qué está
   vivo y qué le falta a cada pieza.
 
@@ -134,7 +141,27 @@ partir de ahora:
    políticas RLS existentes, etc.). Cualquier `CREATE`, `ALTER`, `DROP` u
    otro cambio estructural debe pasar siempre por una migración versionada.
 
-## Estado reciente (2026-08-26)
+## Estado reciente
+
+### 2026-08-28
+
+- Auditoría de código y seguridad: hallazgos críticos/altos corregidos
+  (migraciones duplicadas sin RLS eliminadas, webhook de Gmail sin
+  autenticación deshabilitado, kill-switch de MCP restaurado, colisión de
+  teclado en drag-and-drop corregida, entre otros).
+- Sistema de notificaciones conectado a un envío real (Resend) por primera
+  vez — ver la sección "Notificaciones" arriba y el detalle completo en
+  [`OBSERVABILITY.md`](./OBSERVABILITY.md#6-notification-system--email--in-app).
+  De paso se corrigió un bug real preexistente: marcar notificaciones como
+  leídas fallaba silenciosamente en producción (columna `read` inexistente).
+- **Los deployments de producción llevaban 10+ días fallando** por un
+  "Root Directory" mal configurado en Vercel (resabio de cuando este repo
+  vivía dentro de un monorepo) — no relacionado con ningún cambio de código
+  de esta sesión. Corregido; el sitio vuelve a desplegar en
+  `https://task.conto.ec`.
+- `tsc --noEmit`, `eslint` y la suite de Jest (234 tests) están en verde.
+
+### 2026-08-26
 
 - Se corrigió un crash de `/dashboard` ("Maximum update depth exceeded"):
   `useSyncExternalStore` leía `Date.now()` como snapshot, un valor nunca
@@ -145,8 +172,6 @@ partir de ahora:
   un sistema de analítica de ventas/inventario ajeno a TaskFlow, mezclado en
   este directorio por el incidente de monorepo descrito arriba. Ninguno
   compilaba ni tenía referencias desde código legítimo de TaskFlow.
-- `tsc --noEmit`, `eslint` y la suite de Jest (285/285 tests) están en
-  verde.
 
 ## Más información
 

@@ -204,40 +204,88 @@ request body is even parsed, so the whole endpoint is covered, not just
 `tools/call`. When the limit is exceeded, the endpoint returns a JSON-RPC
 error (code `-32029`) with HTTP status 429.
 
-**Fail-open behavior:** `checkRateLimit()` fails open in two distinct
-cases, both resulting in the request being allowed through rather than
-blocked or erroring out. First, it reads `UPSTASH_REDIS_REST_URL` and
-`UPSTASH_REDIS_REST_TOKEN` from the environment — if either is missing
-(true today in local dev and in production until a human completes the
-step below), it logs a single `console.warn` (not on every request) and
-skips enforcement entirely. Second, even once Upstash is configured, the
-real `limiter.limit()` call is wrapped in a try/catch: if Upstash itself
-throws (network blip, outage, DNS failure), that error is caught and
-logged via `console.error`, and the request is allowed through the same
-way — a transient Upstash error never propagates out of `checkRateLimit()`
-to take down the whole MCP endpoint for every caller. The MCP endpoint
-keeps working exactly as it did before this change in both of these
-situations.
+**Status: active** (as of 2026-08-28). The Upstash Redis integration was
+installed via the Vercel Marketplace (`vercel integration add
+upstash/upstash-kv`) while wiring the notification system's email queue —
+see the "Notifications" section below. It provisions
+`KV_REST_API_URL`/`KV_REST_API_TOKEN` (Vercel's legacy `@vercel/kv` naming,
+kept for backward compatibility), not `UPSTASH_REDIS_REST_URL`/
+`UPSTASH_REDIS_REST_TOKEN` as this file previously assumed — `getRatelimit()`
+in `src/lib/rate-limit.ts` now checks both naming conventions. Confirmed
+these credentials are present in Production, Preview, and Development.
 
-**To activate enforcement, a human needs to:**
+**Not actually "fail-open" even when unconfigured**: contrary to what this
+section previously said, `checkRateLimit()` never allows unlimited
+requests through. When Upstash isn't configured (or a configured call
+itself throws), it falls back to `checkFallbackRateLimit()` — a
+conservative in-memory limiter (10 req/min per key) kept in a module-level
+`Map`. That fallback resets on cold start and isn't shared across
+serverless instances, so it's weaker than the real Upstash-backed limit,
+but the endpoint was never actually unlimited even before Upstash was
+installed.
 
-1. In the Vercel dashboard, open this project → **Integrations** (or
-   **Storage** → **Marketplace Database Providers** depending on the
-   current Vercel UI) tab.
-2. Search for **"Upstash"** and add the **Upstash Redis** integration
-   (free tier is sufficient for this use case).
-3. Select this project when prompted. Vercel/Upstash will automatically
-   create a Redis database and populate `UPSTASH_REDIS_REST_URL` and
-   `UPSTASH_REDIS_REST_TOKEN` as environment variables on the project (all
-   environments, or just Production — choose based on whether you also
-   want rate limiting active in Preview deployments).
-4. Redeploy (or trigger a new deployment) so the new env vars are picked
-   up. No code changes are needed — `checkRateLimit()` will detect the
-   vars and start enforcing the 30 req/min limit automatically.
-5. For local development, copy the same two values into `.env.local` if
-   you want to exercise rate limiting locally; otherwise local dev will
-   continue to fail open (with the one-time warning logged to the
-   console), which is fine for day-to-day work.
+### 6. Notification system — email + in-app
+
+A previously-unfinished notification system (see
+`docs/NOTIFICATION_SYSTEM_DESIGN.md`) was wired to a real send path on
+2026-08-28. It was originally designed around a persistent BullMQ worker
+(`createNotificationWorker()`) — but nothing ever called that function,
+because Vercel serverless functions can't host a long-running queue
+consumer. That's been replaced with `src/lib/notifications/notify.ts`:
+`sendNotification(event)` sends the email (via Resend, using the existing
+React Email templates) and creates the in-app row synchronously, in the
+same request that triggered it. There is no retry queue — failures are
+recorded to the `failed_jobs` table for visibility, and callers are
+expected to treat delivery as best-effort.
+
+**What's actually wired end-to-end today**: two of the eight event types —
+`task_mentioned` and `status_changed`. The Postgres triggers that already
+created in-app notifications for these (`notify_comment_mentions`,
+`notify_task_status_changed`) were extended to also call
+`POST /api/internal/notify-event` via `net.http_post` (the same pattern
+used by outbound automation webhooks), which sends the email. No client
+code changes were needed. Verified live: a real mention was inserted,
+the in-app row was created, the webhook reached the app (HTTP 200), and
+the email sent via Resend with no `failed_jobs` row recorded.
+
+**What's built but NOT wired**: the other six event types
+(`task_assigned`, `due_soon`, `comment_added` as a general event separate
+from mentions, `project_created`, `member_invited`, `task_completed`).
+`notify.ts` supports all eight, but nothing in the app calls
+`sendNotification()` for these six yet — they'd need either a new trigger
+(mirroring the two above) or a client-side call site, depending on where
+each event actually originates.
+
+**Blocked entirely**: the *inbound* half of the original design — parsing
+Gmail replies to update tasks via email (`/api/webhooks/gmail-reply`) —
+requires a real Google Workspace account with admin access to configure
+OAuth (Domain-Wide Delegation) and a Google Cloud Pub/Sub subscription,
+which doesn't exist yet. The route returns `501` until that exists (it
+was previously a stub with a hardcoded `return true` in place of real
+Pub/Sub signature verification — a real security issue, fixed by
+disabling the route rather than leaving it exploitable).
+
+**Two real bugs found and fixed in the process** (unrelated to Gmail,
+pre-existing regardless of this work):
+- `src/lib/supabase/notifications-repo.ts` (used by `NotificationBell` via
+  `BoardContext`) updated a `read` boolean column that never existed on
+  the live `notifications` table — marking notifications as read was
+  silently failing in production. Fixed to use the real `read_at`
+  timestamp column.
+- The Vercel project's **Root Directory** setting was still
+  `taskflow-kanban-prototype`, a leftover from when this repo lived as a
+  subfolder of a larger monorepo. Every production deployment for the
+  preceding 10+ days had been failing at the clone step — unrelated to
+  any code change, just a stale project setting nobody had reason to
+  revisit after the standalone-repo extraction. Fixed via the Vercel API
+  (the CLI has no flag for this setting) and redeployed.
+
+**Env vars added**: `INTERNAL_NOTIFY_SECRET` (shared secret the triggers
+use to authenticate to `/api/internal/notify-event`, stored in Supabase
+Vault for the trigger side), `NEXT_PUBLIC_APP_URL` (corrected to
+`https://task.conto.ec` — it was pointing at a Vercel URL that's behind
+Deployment Protection SSO and would have 302-redirected instead of
+serving the app), `RESEND_API_KEY` (already present, confirmed working).
 
 ## What still requires a human (cannot be wired blind)
 
@@ -268,3 +316,16 @@ for local dev, etc.):
      Uptime, or Freshping) and point it at `/api/cron/alert-check?secret=...`
      if more-than-daily alerting is wanted — see the Hobby-plan limitation
      called out in section 3.
+
+## What still needs actual building (not just credentials)
+
+Unlike the list above, these aren't blocked on a human creating an account —
+they're incomplete features:
+
+- **6 of 8 notification event types aren't wired to any real call site**
+  (see section 6): `task_assigned`, `due_soon`, `comment_added`,
+  `project_created`, `member_invited`, `task_completed`. `notify.ts`
+  supports all of them; nothing calls `sendNotification()` for these six.
+- **Gmail reply-parsing is blocked on a real Google Workspace account**
+  with admin access to set up OAuth + Pub/Sub — see section 6. Until then,
+  `/api/webhooks/gmail-reply` intentionally returns `501`.
