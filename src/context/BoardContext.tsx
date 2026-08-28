@@ -410,7 +410,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       }
     };
 
-    supabase.auth.getSession().then(({ data }) => applySession(data.session));
+    supabase.auth.getSession().then(
+      ({ data }) => applySession(data.session),
+      (err) => {
+        console.error("No se pudo obtener la sesión de Supabase:", err);
+        setLoading(false);
+      }
+    );
 
     // Reacciona a cambios reales de sesión (sign-in/sign-out/expiración) sin
     // depender de `pathname` en el arreglo de dependencias del efecto.

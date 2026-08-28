@@ -11,7 +11,7 @@ interface TaskCardProps {
 }
 
 export default function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
-  const { attributes, listeners, setNodeRef, transform, transition, isDragging } = useSortable({
+  const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { columnId },
   });
@@ -27,20 +27,28 @@ export default function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
     <div
       ref={setNodeRef}
       style={style}
-      {...attributes}
-      {...listeners}
       className={`card p-${task.priority}${isDragging ? " dragging" : ""}`}
       onClick={() => onOpen(task)}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {
-        listeners?.onKeyDown?.(e);
         if (e.key === "Enter" || e.key === " ") {
           if (e.key === " ") e.preventDefault();
           onOpen(task);
         }
       }}
     >
+      <button
+        ref={setActivatorNodeRef}
+        {...attributes}
+        {...listeners}
+        type="button"
+        className="card-drag-handle"
+        aria-label="Mover tarea (arrastrar o usar flechas del teclado)"
+        onClick={(e) => e.stopPropagation()}
+      >
+        ⠿
+      </button>
       <p className="card-title">{task.title}</p>
       <div className="chip-row">
         <span className={`chip pr-${task.priority}`}>

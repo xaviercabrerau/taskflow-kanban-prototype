@@ -1,8 +1,5 @@
 {
   "crons": [
-    { "path": "/api/cron/alert-check", "schedule": "0 8 * * *" },
-    { "path": "/api/cron/daily-digest", "schedule": "0 9 * * *" },
-    { "path": "/api/cron/weekly-alert", "schedule": "0 8 * * 1" },
-    { "path": "/api/cron/monthly-report", "schedule": "0 23 28-31 * *" }
+    { "path": "/api/cron/alert-check", "schedule": "0 8 * * *" }
   ]
 }
