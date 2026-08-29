@@ -165,7 +165,7 @@ export default function MfaAalGate({ children }: { children: React.ReactNode }) 
                 disabled={preparing || !challengeId}
               />
             </div>
-            {error && <p style={{ color: "var(--high)", fontSize: 13.5 }}>{error}</p>}
+            {error && <p role="alert" style={{ color: "var(--high)", fontSize: 13.5 }}>{error}</p>}
           </div>
           <div className="modal-foot">
             <span />

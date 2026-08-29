@@ -29,7 +29,11 @@ function TaskTableRow({ task, onOpen }: { task: Task; onOpen: () => void }) {
       <td>
         <span className={`chip pr-${task.priority}`}>{priorityLabel(task.priority)}</span>
       </td>
-      <td className={`mono due-cell${overdue ? " overdue" : ""}`}>{formatDue(task.dueDate)}</td>
+      <td className={`mono due-cell${overdue ? " overdue" : ""}`}>
+        {overdue && <span aria-hidden="true">⚠ </span>}
+        {formatDue(task.dueDate)}
+        {overdue && <span className="sr-only"> (vencida)</span>}
+      </td>
     </tr>
   );
 }

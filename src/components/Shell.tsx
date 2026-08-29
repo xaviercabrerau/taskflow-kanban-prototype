@@ -113,6 +113,7 @@ export default function Shell({ children, onNewTask }: ShellProps) {
         </div>
         <NotificationBell />
         <ThemeToggle />
+        <div role="toolbar" aria-label="Acciones de la organización" style={{ display: "contents" }}>
         <button
           className="icon-btn"
           style={{ marginLeft: 12 }}
@@ -235,6 +236,7 @@ export default function Shell({ children, onNewTask }: ShellProps) {
         >
           🚪
         </button>
+        </div>
       </div>
 
       {permissionsError && (

@@ -94,6 +94,7 @@ export default function TaskModal({
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
   const [mentionState, setMentionState] = useState<{ prefix: string; start: number } | null>(null);
+  const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
@@ -220,7 +221,25 @@ export default function TaskModal({
     const match = /@([^\s@]*)$/.exec(upToCursor);
     if (match) {
       setMentionState({ prefix: match[1], start: match.index });
+      setActiveMentionIndex(0);
     } else {
+      setMentionState(null);
+    }
+  }
+
+  function handleCommentKeyDown(e: React.KeyboardEvent<HTMLTextAreaElement>) {
+    if (!mentionState || mentionMatches.length === 0) return;
+    if (e.key === "ArrowDown") {
+      e.preventDefault();
+      setActiveMentionIndex((i) => (i + 1) % mentionMatches.length);
+    } else if (e.key === "ArrowUp") {
+      e.preventDefault();
+      setActiveMentionIndex((i) => (i - 1 + mentionMatches.length) % mentionMatches.length);
+    } else if (e.key === "Enter" || e.key === "Tab") {
+      e.preventDefault();
+      selectMention(mentionMatches[activeMentionIndex]);
+    } else if (e.key === "Escape") {
+      e.preventDefault();
       setMentionState(null);
     }
   }
@@ -557,7 +576,7 @@ export default function TaskModal({
             <>
               <div className="field task-section">
                 <label>Etiquetas</label>
-                {tagsError ? <p className="field-error">{tagsError}</p> : null}
+                {tagsError ? <p role="alert" className="field-error">{tagsError}</p> : null}
                 {tagsLoading ? (
                   <p>Cargando etiquetas…</p>
                 ) : (
@@ -628,7 +647,7 @@ export default function TaskModal({
 
               <div className="field task-section">
                 <label>Checklist</label>
-                {checklistError ? <p className="field-error">{checklistError}</p> : null}
+                {checklistError ? <p role="alert" className="field-error">{checklistError}</p> : null}
                 {checklistsLoading ? (
                   <p>Cargando checklists…</p>
                 ) : checklists.length === 0 ? (
@@ -720,7 +739,7 @@ export default function TaskModal({
 
               <div className="field task-section">
                 <label>Adjuntos</label>
-                {attachmentsError ? <p className="field-error">{attachmentsError}</p> : null}
+                {attachmentsError ? <p role="alert" className="field-error">{attachmentsError}</p> : null}
                 <input
                   className="attachment-file-input"
                   type="file"
@@ -754,7 +773,7 @@ export default function TaskModal({
 
               <div className="field task-section">
                 <label>Actividad</label>
-                {activityError ? <p className="field-error">{activityError}</p> : null}
+                {activityError ? <p role="alert" className="field-error">{activityError}</p> : null}
                 {activityLoading ? (
                   <p>Cargando actividad…</p>
                 ) : activity.length === 0 ? (
@@ -775,7 +794,7 @@ export default function TaskModal({
 
               <div className="field task-section">
                 <label>Comentarios</label>
-                {commentsError ? <p className="field-error">{commentsError}</p> : null}
+                {commentsError ? <p role="alert" className="field-error">{commentsError}</p> : null}
                 {commentsLoading ? (
                   <p>Cargando comentarios…</p>
                 ) : comments.length === 0 ? (
@@ -831,14 +850,31 @@ export default function TaskModal({
                     ref={commentTextareaRef}
                     value={newComment}
                     onChange={handleCommentChange}
+                    onKeyDown={handleCommentKeyDown}
                     placeholder="Escribe un comentario… usa @ para mencionar"
                     rows={6}
+                    role="combobox"
+                    aria-expanded={Boolean(mentionState && mentionMatches.length > 0)}
+                    aria-controls={mentionState ? "mention-dropdown-list" : undefined}
+                    aria-activedescendant={
+                      mentionState && mentionMatches[activeMentionIndex]
+                        ? `mention-option-${mentionMatches[activeMentionIndex].userId}`
+                        : undefined
+                    }
                   />
                   {mentionState && mentionMatches.length > 0 ? (
-                    <ul className="mention-dropdown" role="listbox">
-                      {mentionMatches.map((m) => (
+                    <ul id="mention-dropdown-list" className="mention-dropdown" role="listbox">
+                      {mentionMatches.map((m, i) => (
                         <li key={m.userId}>
-                          <button type="button" role="option" aria-selected="false" onClick={() => selectMention(m)}>
+                          <button
+                            type="button"
+                            id={`mention-option-${m.userId}`}
+                            role="option"
+                            aria-selected={i === activeMentionIndex}
+                            className={i === activeMentionIndex ? "active" : undefined}
+                            onMouseEnter={() => setActiveMentionIndex(i)}
+                            onClick={() => selectMention(m)}
+                          >
                             {m.fullName}
                           </button>
                         </li>

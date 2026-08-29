@@ -70,7 +70,11 @@ function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
         {task.attachmentCount ? <div className="meta-ic">📎 {task.attachmentCount}</div> : null}
         {task.commentCount ? <div className="meta-ic">💬 {task.commentCount}</div> : null}
         <div className="meta-spacer" />
-        <span className={`due mono${overdue ? " overdue" : ""}`}>{formatDue(task.dueDate)}</span>
+        <span className={`due mono${overdue ? " overdue" : ""}`}>
+          {overdue && <span aria-hidden="true">⚠ </span>}
+          {formatDue(task.dueDate)}
+          {overdue && <span className="sr-only"> (vencida)</span>}
+        </span>
       </div>
     </div>
   );

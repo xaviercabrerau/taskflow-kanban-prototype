@@ -118,6 +118,19 @@ button {
   }
 }
 
+/* ---------- visually hidden (screen-reader only) ---------- */
+.sr-only {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
 /* ---------- skip link ---------- */
 .skip-link {
   position: absolute;
@@ -972,7 +985,8 @@ a.tab {
   cursor: pointer;
 }
 .mention-dropdown li button:hover,
-.mention-dropdown li button:focus {
+.mention-dropdown li button:focus,
+.mention-dropdown li button.active {
   background: var(--surface-2);
   outline: none;
 }
