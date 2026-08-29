@@ -13,6 +13,7 @@ export const INTEGRATION_PROVIDERS = [
   "github",
   "resend",
   "gmail_inbound",
+  "google",
 ] as const;
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
 

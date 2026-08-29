@@ -287,6 +287,70 @@ Vault for the trigger side), `NEXT_PUBLIC_APP_URL` (corrected to
 Deployment Protection SSO and would have 302-redirected instead of
 serving the app), `RESEND_API_KEY` (already present, confirmed working).
 
+### 7. Google Workspace integration — Calendar, Drive, Gmail (built, not connected)
+
+Built 2026-08-29, alongside a review of what platforms like Trello offer
+via their integration ecosystems (Slack/Teams notifications, GitHub/repo
+sync, Google Calendar/Drive/Gmail). Full OAuth-based integration code
+exists and compiles/type-checks/passes its tests, but **no org can actually
+use it yet** — it requires a Google Cloud project that doesn't exist.
+
+**What exists**:
+- `src/lib/google/oauth.ts` — OAuth 2.0 authorization-code flow via plain
+  `fetch` against Google's REST endpoints (no `googleapis` SDK dependency
+  — deliberately avoided to keep the bundle light, since it was removed
+  earlier this session as dead weight from the old Gmail-send code).
+- `/api/integrations/google/connect` + `/api/integrations/google/callback`
+  — org-owner-gated connect flow. Stores the refresh token via the
+  *existing* `upsert_integration` RPC (same Vault-backed pattern every
+  other provider already uses — no new secret-storage plumbing needed),
+  provider `'google'`.
+- `get_google_refresh_token(p_tenant_id)` — a new SECURITY DEFINER RPC,
+  revoked from anon/authenticated, that only server code holding
+  `SUPABASE_SERVICE_ROLE_KEY` can call. This is the only way the refresh
+  token ever leaves Vault.
+- `src/lib/google/calendar.ts` + a `tasks_due_date_calendar_sync` trigger
+  (same `net.http_post` → `/api/internal/sync-calendar-event` pattern as
+  the notification triggers) — mirrors a task's due date as a Calendar
+  event, keyed by a deterministic event ID derived from the task ID so
+  create/update/delete stay idempotent without a mapping table.
+- `src/lib/google/drive.ts` + `POST /api/tasks/[id]/drive-attachment` +
+  a "Adjuntar de Drive" field in the task modal's Adjuntos section — lets
+  a user paste a Drive share link (Docs/Sheets/Slides/generic file all
+  supported) to attach it, storing the file's real name/type/size via
+  Drive's metadata API. Deliberately **not** the Google Picker widget
+  (would need loading Google's picker.js client-side); a pasted link is
+  much lighter and still gets a real, browsable Drive file.
+- `src/lib/google/gmail.ts` — `sendViaGmail()`, send-as the connected
+  account. Built but not wired into any UI yet, and NOT part of the
+  existing notification pipeline (notify.ts keeps using Resend
+  unconditionally, since that already works for every org regardless of
+  whether they've connected Google) — this exists for a future
+  "send/forward this task by email from my real Gmail" action.
+- `attachments.source` / `attachments.external_url` columns — Drive files
+  aren't Supabase Storage objects, so the existing upload-only attachment
+  model needed a discriminator (`getAttachmentSignedUrl` is skipped
+  entirely for `source = 'google_drive'` rows; they use `external_url`
+  directly).
+
+**Still required — a human must do this**: create a project in
+[Google Cloud Console](https://console.cloud.google.com), enable the
+Calendar API, Drive API, and Gmail API, configure an OAuth consent screen,
+and create OAuth 2.0 credentials (Web application type). Then set in
+Vercel (all environments) and `.env.local`:
+- `GOOGLE_CLIENT_ID`
+- `GOOGLE_CLIENT_SECRET`
+- `GOOGLE_OAUTH_REDIRECT_URI` — must exactly match
+  `https://task.conto.ec/api/integrations/google/callback` and also be
+  registered as an authorized redirect URI in the Google Cloud OAuth
+  client config.
+
+Until all three are set, every function in `src/lib/google/oauth.ts`
+throws a clear "no está configurado" error rather than silently no-op'ing
+— this only ever runs in direct response to a user clicking "Conectar
+cuenta de Google" in Integraciones, so a loud, explicit failure is more
+useful than a silent one.
+
 ## What still requires a human (cannot be wired blind)
 
 None of the following can be completed without real, externally-issued

@@ -25,6 +25,7 @@ const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   github: "GitHub",
   resend: "Email (Resend)",
   gmail_inbound: "Gmail (entrada)",
+  google: "Google Workspace (Calendar, Drive, Gmail)",
 };
 
 interface ConfigField {
@@ -166,7 +167,47 @@ function ProviderCard({ provider, integration }: ProviderCardProps) {
         </div>
       </div>
 
-      {expanded && (
+      {expanded && provider === "google" ? (
+        <div style={{ marginTop: 10 }}>
+          <p style={{ color: "var(--muted)", fontSize: 12.5, marginTop: 0 }}>
+            Conecta una cuenta de Google Workspace para sincronizar las fechas de vencimiento con
+            Google Calendar, adjuntar archivos de Google Drive por enlace, y enviar correos desde
+            Gmail. Requiere que un administrador haya creado un proyecto en Google Cloud con las
+            APIs de Calendar/Drive/Gmail habilitadas — si esa configuración todavía no existe, el
+            botón de abajo mostrará un error explicándolo.
+          </p>
+          {hasCredential ? (
+            <>
+              <p style={{ fontSize: 13.5, marginTop: 10 }}>
+                Cuenta conectada
+                {typeof integration?.config?.connectedEmail === "string"
+                  ? `: ${integration.config.connectedEmail}`
+                  : ""}
+              </p>
+              {feedback && (
+                <p style={{ color: feedback.ok ? "var(--accent)" : "var(--high)", fontSize: 13.5, marginTop: 8 }}>
+                  {feedback.message}
+                </p>
+              )}
+              <div className="modal-foot" style={{ padding: "16px 0 0", borderTop: "none" }}>
+                <button type="button" className="btn" disabled={saving} onClick={handleDelete}>
+                  Desconectar
+                </button>
+                <a href="/api/integrations/google/connect" className="btn primary">
+                  Reconectar
+                </a>
+              </div>
+            </>
+          ) : (
+            <div className="modal-foot" style={{ padding: "16px 0 0", borderTop: "none" }}>
+              <span />
+              <a href="/api/integrations/google/connect" className="btn primary">
+                Conectar cuenta de Google
+              </a>
+            </div>
+          )}
+        </div>
+      ) : expanded ? (
         <div style={{ marginTop: 10 }}>
           {configField && (
             <div className="field">
@@ -241,7 +282,7 @@ function ProviderCard({ provider, integration }: ProviderCardProps) {
             </button>
           </div>
         </div>
-      )}
+      ) : null}
     </div>
   );
 }

@@ -53,31 +53,37 @@ export type Database = {
       attachments: {
         Row: {
           created_at: string
+          external_url: string | null
           file_name: string
           file_size_bytes: number | null
           file_url: string
           id: string
           mime_type: string | null
+          source: string
           task_id: string
           uploaded_by: string | null
         }
         Insert: {
           created_at?: string
+          external_url?: string | null
           file_name: string
           file_size_bytes?: number | null
           file_url: string
           id?: string
           mime_type?: string | null
+          source?: string
           task_id: string
           uploaded_by?: string | null
         }
         Update: {
           created_at?: string
+          external_url?: string | null
           file_name?: string
           file_size_bytes?: number | null
           file_url?: string
           id?: string
           mime_type?: string | null
+          source?: string
           task_id?: string
           uploaded_by?: string | null
         }
@@ -1596,6 +1602,10 @@ export type Database = {
           last_status: string
         }[]
       }
+      get_google_refresh_token: {
+        Args: { p_tenant_id: string }
+        Returns: string
+      }
       has_permission: {
         Args: { bid: string; perm_key: string }
         Returns: boolean
@@ -1687,10 +1697,6 @@ export type Database = {
           full_name: string
           id: string
         }[]
-      }
-      send_notification_email: {
-        Args: { p_notification_id: string }
-        Returns: undefined
       }
       session_meets_mfa: { Args: { org_id: string }; Returns: boolean }
       upsert_integration: {

@@ -9,7 +9,12 @@ export interface TaskAttachment {
   id: string;
   taskId: string;
   fileName: string;
+  // Para source "upload": path del objeto en Supabase Storage (bucket
+  // privado, se resuelve vía signed URL). Para "google_drive": el file_id
+  // de Drive — no vive en Storage, ver externalUrl para el link real.
   storagePath: string;
+  externalUrl: string | null;
+  source: "upload" | "google_drive";
   fileSizeBytes: number | null;
   mimeType: string | null;
   uploadedBy: string | null;
@@ -21,9 +26,9 @@ function mapRow(row: Database["public"]["Tables"]["attachments"]["Row"]): TaskAt
     id: row.id,
     taskId: row.task_id,
     fileName: row.file_name,
-    // file_url guarda el path del objeto en Storage (no una URL pública) —
-    // el bucket es privado y el acceso se hace vía signed URL de corta duración.
     storagePath: row.file_url,
+    externalUrl: row.external_url,
+    source: row.source === "google_drive" ? "google_drive" : "upload",
     fileSizeBytes: row.file_size_bytes,
     mimeType: row.mime_type,
     uploadedBy: row.uploaded_by,
@@ -84,10 +89,16 @@ export async function uploadAttachment(
 export async function deleteAttachment(
   supabase: TypedClient,
   attachmentId: string,
-  storagePath: string
+  storagePath: string,
+  source: "upload" | "google_drive" = "upload"
 ): Promise<void> {
-  const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath]);
-  if (storageError) throw storageError;
+  // Google Drive attachments have no corresponding Storage object — file_url
+  // holds the Drive file ID, not a Storage path — so there's nothing to
+  // remove from the bucket.
+  if (source === "upload") {
+    const { error: storageError } = await supabase.storage.from(BUCKET).remove([storagePath]);
+    if (storageError) throw storageError;
+  }
 
   const { error } = await supabase.from("attachments").delete().eq("id", attachmentId);
   if (error) throw error;

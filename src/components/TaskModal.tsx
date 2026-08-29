@@ -14,6 +14,7 @@ import {
   type TaskAttachment,
 } from "@/lib/supabase/attachments-repo";
 import { fetchActivity, describeActivity, type TaskActivity } from "@/lib/supabase/activity-repo";
+import type { Database } from "@/lib/supabase/database.types";
 import {
   fetchChecklists,
   createChecklist,
@@ -98,6 +99,8 @@ export default function TaskModal({
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
+  const [driveLink, setDriveLink] = useState("");
+  const [attachingDrive, setAttachingDrive] = useState(false);
   const [attachmentsLoading, setAttachmentsLoading] = useState(Boolean(taskId));
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -311,7 +314,7 @@ export default function TaskModal({
 
   async function handleDeleteAttachment(attachment: TaskAttachment) {
     try {
-      await deleteAttachment(supabase, attachment.id, attachment.storagePath);
+      await deleteAttachment(supabase, attachment.id, attachment.storagePath, attachment.source);
       setAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
     } catch (err) {
       console.error("No se pudo eliminar el adjunto:", err);
@@ -320,12 +323,58 @@ export default function TaskModal({
   }
 
   async function handleDownloadAttachment(attachment: TaskAttachment) {
+    if (attachment.source === "google_drive") {
+      if (attachment.externalUrl) {
+        window.open(attachment.externalUrl, "_blank", "noopener,noreferrer");
+      }
+      return;
+    }
     try {
       const url = await getAttachmentSignedUrl(supabase, attachment.storagePath);
       window.open(url, "_blank", "noopener,noreferrer");
     } catch (err) {
       console.error("No se pudo generar el enlace de descarga:", err);
       setAttachmentsError("No se pudo generar el enlace de descarga.");
+    }
+  }
+
+  async function handleAttachDriveLink(e: React.FormEvent) {
+    e.preventDefault();
+    const link = driveLink.trim();
+    if (!link || !taskId || attachingDrive) return;
+    setAttachingDrive(true);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/drive-attachment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ shareLink: link }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudo adjuntar el archivo.");
+      }
+      const row = json.attachment as Database["public"]["Tables"]["attachments"]["Row"];
+      setAttachments((prev) => [
+        {
+          id: row.id,
+          taskId: row.task_id,
+          fileName: row.file_name,
+          storagePath: row.file_url,
+          externalUrl: row.external_url,
+          source: row.source === "google_drive" ? "google_drive" : "upload",
+          fileSizeBytes: row.file_size_bytes,
+          mimeType: row.mime_type,
+          uploadedBy: row.uploaded_by,
+          createdAt: row.created_at,
+        },
+        ...prev,
+      ]);
+      setDriveLink("");
+      setAttachmentsError(null);
+    } catch (err) {
+      setAttachmentsError(err instanceof Error ? err.message : "No se pudo adjuntar el archivo.");
+    } finally {
+      setAttachingDrive(false);
     }
   }
 
@@ -746,6 +795,22 @@ export default function TaskModal({
                   onChange={handleUploadFile}
                   disabled={uploading}
                 />
+                <div className="comment-input-wrap" style={{ marginTop: 8 }}>
+                  <input
+                    value={driveLink}
+                    onChange={(e) => setDriveLink(e.target.value)}
+                    placeholder="Pega un enlace de Google Drive para adjuntarlo"
+                    disabled={attachingDrive}
+                  />
+                  <button
+                    type="button"
+                    className="btn"
+                    onClick={handleAttachDriveLink}
+                    disabled={!driveLink.trim() || attachingDrive}
+                  >
+                    {attachingDrive ? "Adjuntando…" : "Adjuntar de Drive"}
+                  </button>
+                </div>
                 {attachmentsLoading ? (
                   <p>Cargando adjuntos…</p>
                 ) : attachments.length === 0 ? (
@@ -755,6 +820,7 @@ export default function TaskModal({
                     {attachments.map((a) => (
                       <li key={a.id} className="attachment-item">
                         <span className="attachment-name">
+                          {a.source === "google_drive" ? "📁 " : ""}
                           {a.fileName} {a.fileSizeBytes != null ? `(${formatFileSize(a.fileSizeBytes)})` : ""}
                         </span>
                         <span style={{ display: "flex", gap: 6 }}>
