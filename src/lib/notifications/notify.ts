@@ -63,11 +63,11 @@ export function validateEvent(event: unknown): NotificationEvent | null {
     console.warn('Notification event validation failed: invalid organizationId');
     return null;
   }
-  if (evt.taskId !== undefined && !isValidUuid(evt.taskId)) {
+  if (evt.taskId !== undefined && evt.taskId !== null && !isValidUuid(evt.taskId)) {
     console.warn('Notification event validation failed: invalid taskId');
     return null;
   }
-  if (evt.actorId !== undefined && !isValidUuid(evt.actorId)) {
+  if (evt.actorId !== undefined && evt.actorId !== null && !isValidUuid(evt.actorId)) {
     console.warn('Notification event validation failed: invalid actorId');
     return null;
   }
@@ -82,8 +82,8 @@ export function validateEvent(event: unknown): NotificationEvent | null {
     organizationId: evt.organizationId as string,
     data: evt.data as Record<string, unknown>,
   };
-  if (evt.taskId !== undefined) validated.taskId = evt.taskId as string;
-  if (evt.actorId !== undefined) validated.actorId = evt.actorId as string;
+  if (evt.taskId !== undefined && evt.taskId !== null) validated.taskId = evt.taskId as string;
+  if (evt.actorId !== undefined && evt.actorId !== null) validated.actorId = evt.actorId as string;
   return validated;
 }
 

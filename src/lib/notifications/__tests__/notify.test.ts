@@ -95,6 +95,20 @@ describe('validateEvent', () => {
     void _data;
     expect(validateEvent(rest)).toBeNull();
   });
+
+  it('accepts null taskId/actorId (system/automation-triggered events with no human actor)', () => {
+    // Regression test: a Postgres trigger firing with auth.uid() = null (e.g.
+    // no authenticated session, as with a service-role insert or an
+    // automation-authored comment) sends JSON `null`, not an omitted key.
+    // validateEvent previously only special-cased `undefined`, so a `null`
+    // actorId/taskId was rejected as an invalid UUID — silently dropping
+    // every such notification.
+    const event = { ...baseEvent, taskId: null, actorId: null };
+    const result = validateEvent(event);
+    expect(result).not.toBeNull();
+    expect(result?.taskId).toBeUndefined();
+    expect(result?.actorId).toBeUndefined();
+  });
 });
 
 describe('sendNotification', () => {
