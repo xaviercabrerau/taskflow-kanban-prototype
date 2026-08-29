@@ -100,36 +100,56 @@ describe('API: /api/admin/users (GET & POST)', () => {
         error: null,
       });
 
-      const mockFromChain = {
-        select: jest.fn(),
+      // The route makes two sequential `.from('organization_members')` calls
+      // with different shapes: the first ends in `.maybeSingle()` (membership
+      // check), the second is awaited directly off `.eq()` (the users list).
+      const membershipChain = {
+        select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        maybeSingle: jest.fn(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: { organization_id: 'org-123', org_role: 'owner' },
+          error: null,
+        }),
+      };
+      const usersListChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({
+          data: [
+            {
+              user_id: 'user-123',
+              org_role: 'owner',
+              joined_at: '2026-01-01T00:00:00.000Z',
+              profiles: { id: 'user-123', email: 'ana@example.com', full_name: 'Ana QA' },
+            },
+          ],
+          error: null,
+        }),
       };
 
-      // First call for membership check
-      mockFromChain.select.mockReturnValueOnce(mockFromChain);
-      mockFromChain.maybeSingle.mockResolvedValueOnce({
-        data: { organization_id: 'org-123', org_role: 'owner' },
-        error: null,
-      });
-
-      // Second call for users list
-      mockFromChain.select.mockReturnValueOnce(mockFromChain);
-      mockFromChain.maybeSingle.mockResolvedValueOnce(null);
-      mockFromChain.eq.mockReturnValueOnce(mockFromChain);
-      mockFromChain.eq.mockReturnValueOnce(mockFromChain);
-
       mockSupabase.from
-        .mockReturnValueOnce(mockFromChain) // First from call
-        .mockReturnValueOnce({
-          select: jest.fn().mockReturnThis(),
-          eq: jest.fn().mockReturnThis(),
-        }); // Second from call
+        .mockReturnValueOnce(membershipChain)
+        .mockReturnValueOnce(usersListChain);
 
       mockRequest = new Request('http://localhost:3000/api/admin/users');
 
-      // This test needs more detailed mocking setup
-      // Skipping complex integration test
+      const response = await getUsers(mockRequest);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.users).toEqual([
+        {
+          id: 'user-123',
+          email: 'ana@example.com',
+          name: 'Ana QA',
+          role: 'admin',
+          status: 'active',
+          lastLogin: null,
+          createdAt: '2026-01-01T00:00:00.000Z',
+          updatedAt: '2026-01-01T00:00:00.000Z',
+          assignedClientIds: [],
+        },
+      ]);
+      expect(usersListChain.eq).toHaveBeenCalledWith('organization_id', 'org-123');
     });
 
     it('should handle empty user list', async () => {
@@ -138,17 +158,30 @@ describe('API: /api/admin/users (GET & POST)', () => {
         error: null,
       });
 
-      const mockFromChain = {
-        select: jest.fn(),
+      const membershipChain = {
+        select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
-        maybeSingle: jest.fn(),
+        maybeSingle: jest.fn().mockResolvedValue({
+          data: { organization_id: 'org-123', org_role: 'owner' },
+          error: null,
+        }),
+      };
+      const usersListChain = {
+        select: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
 
-      mockSupabase.from.mockReturnValue(mockFromChain);
+      mockSupabase.from
+        .mockReturnValueOnce(membershipChain)
+        .mockReturnValueOnce(usersListChain);
 
       mockRequest = new Request('http://localhost:3000/api/admin/users');
 
-      // Simplified test structure
+      const response = await getUsers(mockRequest);
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.users).toEqual([]);
     });
   });
 

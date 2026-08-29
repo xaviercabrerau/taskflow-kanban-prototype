@@ -10,8 +10,7 @@ This directory contains the complete testing infrastructure for TaskFlow:
 2. **SECURITY-TESTING-README.md** - Complete documentation with remediation guides
 3. **SECURITY-QUICK-REFERENCE.md** - Quick reference card for common tasks
 4. **1-load-testing.yaml** - Load testing configuration
-5. **3-integration-tests-enhanced.test.ts** - Integration test suite
-6. **load-test.js** - Load test execution script
+5. **load-test.js** - Load test execution script
 
 ## Quick Start
 
@@ -185,7 +184,6 @@ testing/
 ├── SECURITY-QUICK-REFERENCE.md        # Quick reference card
 ├── README.md                          # This file
 ├── 1-load-testing.yaml               # Load testing configuration
-├── 3-integration-tests-enhanced.test.ts
 └── load-test.js
 ```
 

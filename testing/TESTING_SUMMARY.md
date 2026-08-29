@@ -26,7 +26,6 @@ This directory contains **production-ready testing infrastructure** for the Task
 | File | Purpose | Status |
 |------|---------|--------|
 | `2-security-testing.sh` | Security and penetration testing script | ✅ Ready |
-| `3-integration-tests-enhanced.test.ts` | Enhanced integration tests | ✅ Ready |
 | `SECURITY-TESTING-README.md` | Security testing guide | ✅ Ready |
 
 ---
