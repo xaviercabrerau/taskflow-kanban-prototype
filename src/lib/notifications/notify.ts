@@ -9,6 +9,21 @@
  * automatic retry queue; failures are recorded to `failed_jobs` for
  * visibility and the caller is expected to treat delivery as best-effort
  * (never let a notification failure fail the underlying action).
+ *
+ * Architectural convention — where callers belong: this module uses the
+ * Supabase service-role key and must never run in the browser. The two
+ * event types currently wired (task_mentioned, status_changed) are
+ * triggered from Postgres triggers via net.http_post to
+ * /api/internal/notify-event (see supabase/migrations/
+ * 20260828190100_wire_email_notifications_via_triggers.sql), NOT from
+ * client code — this keeps RLS as the single authorization boundary for
+ * all board/task mutations (which stay client → Supabase direct, see
+ * BoardContext.tsx) while side effects like email stay server-side. When
+ * wiring the remaining event types (task_assigned, due_soon,
+ * comment_added, project_created, member_invited, task_completed),
+ * follow the same pattern: add/extend a Postgres trigger that calls
+ * /api/internal/notify-event, don't call sendNotification() or the route
+ * from a client component or a BoardContext action.
  */
 
 import { createClient } from '@supabase/supabase-js';
