@@ -1,6 +1,6 @@
 "use client";
 
-import { useState } from "react";
+import { useCallback, useMemo, useState } from "react";
 import {
   DndContext,
   DragEndEvent,
@@ -58,6 +58,38 @@ export default function Board() {
   const [modal, setModal] = useState<{ mode: "create" | "edit"; task?: Task; columnId?: string } | null>(
     null
   );
+
+  // Stable callback identities so Column/TaskCard's React.memo can actually
+  // skip re-rendering unaffected cards on unrelated Board re-renders (e.g.
+  // every keystroke in the search box) — an inline arrow here would give
+  // every card a "new" onOpen prop each render and defeat the memo.
+  const handleOpenTask = useCallback((task: Task) => {
+    const col = state.columns.find((c) => c.taskIds.includes(task.id));
+    setModal({ mode: "edit", task, columnId: col?.id });
+  }, [state.columns]);
+
+  const handleAddTask = useCallback((columnId: string) => {
+    setModal({ mode: "create", columnId });
+  }, []);
+
+  const tasksByColumn = useMemo(() => {
+    const map = new Map<string, Task[]>();
+    for (const col of state.columns) {
+      map.set(
+        col.id,
+        col.taskIds
+          .map((id) => state.tasks[id])
+          .filter(Boolean)
+          .filter((task) => assigneeFilter === null || task.assigneeUserId === assigneeFilter)
+          .filter(
+            (task) =>
+              !searchQuery.trim() ||
+              task.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
+          )
+      );
+    }
+    return map;
+  }, [state.columns, state.tasks, assigneeFilter, searchQuery]);
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -132,17 +164,9 @@ export default function Board() {
             <Column
               key={col.id}
               column={col}
-              tasks={col.taskIds
-                .map((id) => state.tasks[id])
-                .filter(Boolean)
-                .filter((task) => assigneeFilter === null || task.assigneeUserId === assigneeFilter)
-                .filter(
-                  (task) =>
-                    !searchQuery.trim() ||
-                    task.title.toLowerCase().includes(searchQuery.trim().toLowerCase())
-                )}
-              onOpenTask={(task) => setModal({ mode: "edit", task, columnId: col.id })}
-              onAddTask={(columnId) => setModal({ mode: "create", columnId })}
+              tasks={tasksByColumn.get(col.id) ?? []}
+              onOpenTask={handleOpenTask}
+              onAddTask={handleAddTask}
             />
           ))}
           {can("board.manage") && (

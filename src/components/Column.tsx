@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useDroppable } from "@dnd-kit/core";
 import { SortableContext, verticalListSortingStrategy } from "@dnd-kit/sortable";
 import { ColumnData, Task } from "@/lib/types";
@@ -13,7 +14,7 @@ interface ColumnProps {
   onAddTask: (columnId: string) => void;
 }
 
-export default function Column({ column, tasks, onOpenTask, onAddTask }: ColumnProps) {
+function Column({ column, tasks, onOpenTask, onAddTask }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { columnId: column.id } });
   const { can } = useBoard();
 
@@ -44,3 +45,5 @@ export default function Column({ column, tasks, onOpenTask, onAddTask }: ColumnP
     </div>
   );
 }
+
+export default memo(Column);

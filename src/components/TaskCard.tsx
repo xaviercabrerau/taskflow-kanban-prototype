@@ -1,5 +1,6 @@
 "use client";
 
+import { memo } from "react";
 import { useSortable } from "@dnd-kit/sortable";
 import { CSS } from "@dnd-kit/utilities";
 import { Task, assigneeColor, assigneeInitial, formatDue, isOverdue } from "@/lib/types";
@@ -10,7 +11,7 @@ interface TaskCardProps {
   onOpen: (task: Task) => void;
 }
 
-export default function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
+function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { columnId },
@@ -74,3 +75,5 @@ export default function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
     </div>
   );
 }
+
+export default memo(TaskCard);
