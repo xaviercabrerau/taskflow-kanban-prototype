@@ -1,8 +1,9 @@
 "use client";
 
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
+import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 // Verifica el nivel de verificación (AAL) de la sesión ANTES de montar
 // BoardProvider. Este chequeo depende únicamente de la sesión de Supabase
@@ -24,6 +25,10 @@ export default function MfaAalGate({ children }: { children: React.ReactNode }) 
   const [code, setCode] = useState("");
   const [verifying, setVerifying] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const formRef = useRef<HTMLFormElement>(null);
+  // No-op onClose: this gate is mandatory and must not be dismissible via
+  // Escape — only the hook's Tab focus-trap behavior is wanted here.
+  useDialogA11y(formRef, () => {}, needsChallenge);
 
   useEffect(() => {
     let cancelled = false;
@@ -128,9 +133,17 @@ export default function MfaAalGate({ children }: { children: React.ReactNode }) 
   if (needsChallenge) {
     return (
       <div className="modal-backdrop" style={{ position: "static", minHeight: "100vh" }}>
-        <form className="modal" style={{ width: 360 }} onSubmit={handleVerify}>
+        <form
+          ref={formRef}
+          className="modal"
+          style={{ width: 360 }}
+          onSubmit={handleVerify}
+          role="dialog"
+          aria-modal="true"
+          aria-labelledby="mfa-aal-gate-title"
+        >
           <div className="modal-head">
-            <h2>Verificación en dos pasos</h2>
+            <h2 id="mfa-aal-gate-title">Verificación en dos pasos</h2>
           </div>
           <div className="modal-body">
             <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 0 }}>

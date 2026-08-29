@@ -1,7 +1,8 @@
 "use client";
 
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 function timeAgo(iso: string): string {
   const diffMs = Date.now() - new Date(iso).getTime();
@@ -16,6 +17,8 @@ function timeAgo(iso: string): string {
 export default function NotificationBell() {
   const { notifications, unreadCount, markRead, markAllRead } = useBoard();
   const [open, setOpen] = useState(false);
+  const panelRef = useRef<HTMLDivElement>(null);
+  useDialogA11y(panelRef, () => setOpen(false), open);
 
   return (
     <div style={{ position: "relative" }}>
@@ -25,6 +28,8 @@ export default function NotificationBell() {
         onClick={() => setOpen((v) => !v)}
         title="Notificaciones"
         aria-label="Notificaciones"
+        aria-haspopup="dialog"
+        aria-expanded={open}
       >
         🔔
         {unreadCount > 0 && (
@@ -55,7 +60,12 @@ export default function NotificationBell() {
             onClick={() => setOpen(false)}
           />
           <div
+            ref={panelRef}
             className="modal"
+            role="dialog"
+            aria-modal="true"
+            aria-labelledby="notification-bell-title"
+            tabIndex={-1}
             style={{
               position: "absolute",
               top: "calc(100% + 8px)",
@@ -67,7 +77,7 @@ export default function NotificationBell() {
             }}
           >
             <div className="modal-head">
-              <h2 style={{ fontSize: 14.5 }}>Notificaciones</h2>
+              <h2 id="notification-bell-title" style={{ fontSize: 14.5 }}>Notificaciones</h2>
               {unreadCount > 0 && (
                 <button
                   type="button"

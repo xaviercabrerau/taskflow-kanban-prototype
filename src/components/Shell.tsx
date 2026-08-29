@@ -72,6 +72,9 @@ export default function Shell({ children, onNewTask }: ShellProps) {
 
   return (
     <>
+      <a href="#main-content" className="skip-link">
+        Saltar al contenido principal
+      </a>
       <div className="topbar">
         <div className="brand">
           <span className="dot" />
@@ -279,7 +282,7 @@ export default function Shell({ children, onNewTask }: ShellProps) {
         )}
       </div>
 
-      {children}
+      <main id="main-content">{children}</main>
     </>
   );
 }

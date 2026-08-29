@@ -3,16 +3,16 @@
   --surface: #ffffff;
   --surface-2: #edeae1;
   --fg: #14171c;
-  --muted: #66716f;
+  --muted: #616c6a;
   --muted-soft: #e3e6e1;
   --border: #dedacd;
   --accent: #0f8f82;
   --accent-soft: #dcefe9;
   --urgent: #b3121c;
   --urgent-soft: #f6d3d5;
-  --high: #d14b0f;
+  --high: #b4410d;
   --high-soft: #fbe3d6;
-  --medium: #b9760a;
+  --medium: #925d08;
   --medium-soft: #f7e6c6;
   --low: #3b6ea5;
   --low-soft: #dee9f4;
@@ -68,16 +68,16 @@
   --surface: #ffffff;
   --surface-2: #edeae1;
   --fg: #14171c;
-  --muted: #66716f;
+  --muted: #616c6a;
   --muted-soft: #e3e6e1;
   --border: #dedacd;
   --accent: #0f8f82;
   --accent-soft: #dcefe9;
   --urgent: #b3121c;
   --urgent-soft: #f6d3d5;
-  --high: #d14b0f;
+  --high: #b4410d;
   --high-soft: #fbe3d6;
-  --medium: #b9760a;
+  --medium: #925d08;
   --medium-soft: #f7e6c6;
   --low: #3b6ea5;
   --low-soft: #dee9f4;
@@ -116,6 +116,25 @@ button {
     transition: background 0.12s ease, border-color 0.12s ease, transform 0.12s ease,
       opacity 0.12s ease;
   }
+}
+
+/* ---------- skip link ---------- */
+.skip-link {
+  position: absolute;
+  top: -40px;
+  left: 8px;
+  z-index: 1000;
+  background: var(--accent);
+  color: #fff;
+  padding: 8px 14px;
+  border-radius: 6px;
+  font-size: 13px;
+  font-weight: 600;
+  text-decoration: none;
+  transition: top 0.15s ease;
+}
+.skip-link:focus {
+  top: 8px;
 }
 
 /* ---------- top bar ---------- */

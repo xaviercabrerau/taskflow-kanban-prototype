@@ -96,6 +96,54 @@ export default function Board() {
     useSensor(KeyboardSensor, { coordinateGetter: sortableKeyboardCoordinates })
   );
 
+  // dnd-kit anuncia en inglés y sin mencionar la columna destino por
+  // defecto; esta app es en español y el destino es justo lo que un
+  // usuario de lector de pantalla necesita saber al mover una tarea.
+  const accessibility = useMemo(
+    () => {
+      function columnTitleFor(overId: string): string | undefined {
+        const destCol =
+          state.columns.find((c) => c.id === overId) ??
+          state.columns.find((c) => c.taskIds.includes(overId));
+        return destCol?.title;
+      }
+
+      return {
+      screenReaderInstructions: {
+        draggable:
+          "Presiona espacio o enter para levantar la tarea. Usa las flechas del teclado para moverla entre columnas y posiciones. Presiona espacio o enter otra vez para soltarla, o escape para cancelar.",
+      },
+      announcements: {
+        onDragStart: ({ active }: { active: { id: string | number } }) => {
+          const task = state.tasks[String(active.id)];
+          return task ? `Se levantó la tarea "${task.title}".` : undefined;
+        },
+        onDragOver: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) => {
+          if (!over) return undefined;
+          const task = state.tasks[String(active.id)];
+          const colTitle = columnTitleFor(String(over.id));
+          if (!task || !colTitle) return undefined;
+          return `La tarea "${task.title}" está sobre la columna "${colTitle}".`;
+        },
+        onDragEnd: ({ active, over }: { active: { id: string | number }; over: { id: string | number } | null }) => {
+          const task = state.tasks[String(active.id)];
+          if (!task) return undefined;
+          if (!over) return `Se canceló el arrastre de la tarea "${task.title}".`;
+          const colTitle = columnTitleFor(String(over.id));
+          return colTitle
+            ? `La tarea "${task.title}" se movió a la columna "${colTitle}".`
+            : `Se soltó la tarea "${task.title}".`;
+        },
+        onDragCancel: ({ active }: { active: { id: string | number } }) => {
+          const task = state.tasks[String(active.id)];
+          return task ? `Se canceló el arrastre de la tarea "${task.title}".` : undefined;
+        },
+      },
+      };
+    },
+    [state.tasks, state.columns]
+  );
+
   function handleDragStart(event: DragStartEvent) {
     setActiveId(String(event.active.id));
   }
@@ -137,6 +185,7 @@ export default function Board() {
         sensors={sensors}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        accessibility={accessibility}
       >
         <div className="assignee-filter">
           <label>
