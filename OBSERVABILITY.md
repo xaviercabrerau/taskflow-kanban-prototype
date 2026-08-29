@@ -351,6 +351,18 @@ throws a clear "no está configurado" error rather than silently no-op'ing
 cuenta de Google" in Integraciones, so a loud, explicit failure is more
 useful than a silent one.
 
+**Live-verified as far as it can go without real credentials**: clicking
+"Conectar cuenta de Google" in production correctly progressed through
+auth/org-owner checks and failed at exactly the expected point —
+`{"error":"GOOGLE_CLIENT_ID no está configurado..."}` — after first
+surfacing (and fixing) an unrelated pre-existing gap: `JWT_SECRET` had
+never been set in any environment. It's used by `buildOAuthState()` here,
+and — discovered in the process — by `src/app/api/auth/login/route.ts`,
+a dead custom-JWT login endpoint no UI actually calls (the real login
+page uses Supabase Auth directly), which had therefore been silently
+throwing since it was written. `JWT_SECRET` is now set in all
+environments; the dead route is flagged separately for cleanup.
+
 ## What still requires a human (cannot be wired blind)
 
 None of the following can be completed without real, externally-issued
