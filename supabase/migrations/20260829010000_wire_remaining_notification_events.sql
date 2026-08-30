@@ -214,3 +214,94 @@ drop trigger if exists tasks_notify_completed on tasks;
 create trigger tasks_notify_completed
   after update on tasks
   for each row execute function public.notify_task_completed();
+
+-- NOTE (discovered during live verification of comment_added): as with
+-- task_assigned and task_completed, the notifications_type_check
+-- constraint did not yet allow type='comment_added'. Widening
+-- additively again, same pattern, keeping every previously allowed
+-- value.
+alter table public.notifications drop constraint notifications_type_check;
+alter table public.notifications add constraint notifications_type_check
+  check (type = any (array['assigned'::text, 'mentioned'::text, 'due_soon'::text, 'status_changed'::text, 'task_assigned'::text, 'task_completed'::text, 'comment_added'::text]));
+
+-- ============================================================
+-- 4. comment_added (general) — fires for the task's creator +
+-- assignees, excluding the author and anyone already notified
+-- via @mention on this same comment (notify_comment_mentions
+-- handles those separately).
+-- ============================================================
+create or replace function public.notify_comment_added()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  task_rec record;
+  recipient_id uuid;
+  actor uuid := auth.uid();
+  actor_name text;
+  notify_secret text;
+  already_mentioned uuid[] := coalesce(NEW.mentioned_user_ids, array[]::uuid[]);
+begin
+  select t.id, t.tenant_id, t.title, t.created_by into task_rec from tasks t where t.id = NEW.task_id;
+  if task_rec.id is null then
+    return NEW;
+  end if;
+
+  select full_name into actor_name from profiles where id = actor;
+  select decrypted_secret into notify_secret from vault.decrypted_secrets where name = 'internal_notify_secret';
+
+  for recipient_id in
+    select distinct uid from (
+      select task_rec.created_by as uid
+      union
+      select ta.user_id from task_assignees ta where ta.task_id = task_rec.id
+    ) recipients
+    where uid is not null
+  loop
+    if recipient_id is distinct from actor
+      and recipient_id is distinct from NEW.author_id
+      and not (recipient_id = any(already_mentioned))
+    then
+      insert into notifications (tenant_id, user_id, type, title, body, related_task_id, actor_id)
+      values (
+        task_rec.tenant_id,
+        recipient_id,
+        'comment_added',
+        'Nuevo comentario',
+        format('%s comentó en "%s"', coalesce(actor_name, 'Alguien'), task_rec.title),
+        task_rec.id,
+        actor
+      );
+
+      if notify_secret is not null then
+        perform net.http_post(
+          url := 'https://taskflow-kanban-prototype-xaviercabrerau-1550s-projects.vercel.app/api/internal/notify-event',
+          body := jsonb_build_object(
+            'eventType', 'comment_added',
+            'userId', recipient_id,
+            'organizationId', task_rec.tenant_id,
+            'taskId', task_rec.id,
+            'actorId', actor,
+            'channels', jsonb_build_array('email'),
+            'data', jsonb_build_object(
+              'taskTitle', task_rec.title,
+              'actorName', coalesce(actor_name, 'Alguien'),
+              'commentText', left(NEW.body, 500)
+            )
+          ),
+          headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', notify_secret)
+        );
+      end if;
+    end if;
+  end loop;
+
+  return NEW;
+end;
+$function$;
+
+drop trigger if exists comments_notify_added on comments;
+create trigger comments_notify_added
+  after insert on comments
+  for each row execute function public.notify_comment_added();
