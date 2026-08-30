@@ -305,3 +305,67 @@ drop trigger if exists comments_notify_added on comments;
 create trigger comments_notify_added
   after insert on comments
   for each row execute function public.notify_comment_added();
+
+-- NOTE (discovered during live verification of task 5): as with the
+-- prior four events, the notifications_type_check constraint did not
+-- yet allow type='member_invited'. Widening additively again, same
+-- pattern, keeping every previously allowed value.
+alter table public.notifications drop constraint notifications_type_check;
+alter table public.notifications add constraint notifications_type_check
+  check (type = any (array['assigned'::text, 'mentioned'::text, 'due_soon'::text, 'status_changed'::text, 'task_assigned'::text, 'task_completed'::text, 'comment_added'::text, 'member_invited'::text]));
+
+-- ============================================================
+-- 5. member_invited — fires for any new membership row that
+-- isn't the org-bootstrap owner row (the only 'owner' row ever
+-- inserted comes from the atomic org-creation RPC, not a real
+-- invite).
+-- ============================================================
+create or replace function public.notify_member_invited()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  actor uuid := coalesce(NEW.invited_by, auth.uid());
+  actor_name text;
+  notify_secret text;
+begin
+  if NEW.org_role != 'owner' then
+    select full_name into actor_name from profiles where id = actor;
+
+    insert into notifications (tenant_id, user_id, type, title, body, actor_id)
+    values (
+      NEW.organization_id,
+      NEW.user_id,
+      'member_invited',
+      'Te invitaron a una organización',
+      format('%s te invitó a unirte', coalesce(actor_name, 'Alguien')),
+      actor
+    );
+
+    select decrypted_secret into notify_secret from vault.decrypted_secrets where name = 'internal_notify_secret';
+    if notify_secret is not null then
+      perform net.http_post(
+        url := 'https://taskflow-kanban-prototype-xaviercabrerau-1550s-projects.vercel.app/api/internal/notify-event',
+        body := jsonb_build_object(
+          'eventType', 'member_invited',
+          'userId', NEW.user_id,
+          'organizationId', NEW.organization_id,
+          'actorId', actor,
+          'channels', jsonb_build_array('email'),
+          'data', jsonb_build_object('actorName', coalesce(actor_name, 'Alguien'))
+        ),
+        headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', notify_secret)
+      );
+    end if;
+  end if;
+
+  return NEW;
+end;
+$function$;
+
+drop trigger if exists org_members_notify_invited on organization_members;
+create trigger org_members_notify_invited
+  after insert on organization_members
+  for each row execute function public.notify_member_invited();
