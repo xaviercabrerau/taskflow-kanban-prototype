@@ -369,3 +369,72 @@ drop trigger if exists org_members_notify_invited on organization_members;
 create trigger org_members_notify_invited
   after insert on organization_members
   for each row execute function public.notify_member_invited();
+
+-- NOTE (discovered during live verification of task 6): as with the prior
+-- five events, the notifications_type_check constraint did not yet allow
+-- type='project_created'. Widening additively again, same pattern, keeping
+-- every previously allowed value.
+alter table public.notifications drop constraint notifications_type_check;
+alter table public.notifications add constraint notifications_type_check
+  check (type = any (array['assigned'::text, 'mentioned'::text, 'due_soon'::text, 'status_changed'::text, 'task_assigned'::text, 'task_completed'::text, 'comment_added'::text, 'member_invited'::text, 'project_created'::text]));
+
+-- ============================================================
+-- 6. project_created — fires for org owners/admins (not every
+-- member) when a new board is created, excluding the creator.
+-- ============================================================
+create or replace function public.notify_project_created()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  admin_id uuid;
+  actor uuid := coalesce(NEW.created_by, auth.uid());
+  actor_name text;
+  notify_secret text;
+begin
+  select full_name into actor_name from profiles where id = actor;
+  select decrypted_secret into notify_secret from vault.decrypted_secrets where name = 'internal_notify_secret';
+
+  for admin_id in
+    select om.user_id from organization_members om
+    where om.organization_id = NEW.tenant_id
+      and om.org_role in ('owner', 'admin')
+  loop
+    if admin_id is distinct from actor then
+      insert into notifications (tenant_id, user_id, type, title, body, actor_id)
+      values (
+        NEW.tenant_id,
+        admin_id,
+        'project_created',
+        'Nuevo proyecto',
+        format('Se creó el proyecto "%s"', NEW.name),
+        actor
+      );
+
+      if notify_secret is not null then
+        perform net.http_post(
+          url := 'https://taskflow-kanban-prototype-xaviercabrerau-1550s-projects.vercel.app/api/internal/notify-event',
+          body := jsonb_build_object(
+            'eventType', 'project_created',
+            'userId', admin_id,
+            'organizationId', NEW.tenant_id,
+            'actorId', actor,
+            'channels', jsonb_build_array('email'),
+            'data', jsonb_build_object('projectName', NEW.name, 'actorName', coalesce(actor_name, 'Alguien'))
+          ),
+          headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', notify_secret)
+        );
+      end if;
+    end if;
+  end loop;
+
+  return NEW;
+end;
+$function$;
+
+drop trigger if exists boards_notify_created on boards;
+create trigger boards_notify_created
+  after insert on boards
+  for each row execute function public.notify_project_created();
