@@ -2,6 +2,12 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { sendViaGmail } from "@/lib/google/gmail";
 import { taskUrl, formatDate } from "@/lib/emails/utils";
+import { priorityLabel, type Priority } from "@/lib/types";
+
+// Simple email-shape check: rejects obviously malformed input and any
+// string containing whitespace/newlines, without being a full RFC 5322
+// validator.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * POST /api/tasks/[id]/forward-email
@@ -30,7 +36,13 @@ export async function POST(
   }
 
   const to = body.to?.trim();
-  if (!to || !to.includes("@")) {
+  if (!to || /[\r\n]/.test(to)) {
+    return NextResponse.json(
+      { error: "Se requiere un email de destinatario válido." },
+      { status: 400 }
+    );
+  }
+  if (!EMAIL_RE.test(to)) {
     return NextResponse.json(
       { error: "Se requiere un email de destinatario válido." },
       { status: 400 }
@@ -56,7 +68,7 @@ export async function POST(
     "",
     task.description || "(sin descripción)",
     "",
-    `Prioridad: ${task.priority}`,
+    `Prioridad: ${priorityLabel(task.priority as Priority)}`,
     `Vencimiento: ${task.due_date ? formatDate(task.due_date, "long") : "sin fecha"}`,
     "",
   ];
