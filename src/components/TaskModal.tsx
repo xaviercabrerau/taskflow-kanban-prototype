@@ -923,7 +923,7 @@ export default function TaskModal({
                   )}
                   {forwardResult && (
                     <p
-                      role={forwardResult.ok ? undefined : "alert"}
+                      role={forwardResult.ok ? "status" : "alert"}
                       className={forwardResult.ok ? undefined : "field-error"}
                       style={forwardResult.ok ? { color: "var(--low)", fontSize: 13.5 } : undefined}
                     >
