@@ -397,10 +397,6 @@ for local dev, etc.):
 Unlike the list above, these aren't blocked on a human creating an account —
 they're incomplete features:
 
-- **6 of 8 notification event types aren't wired to any real call site**
-  (see section 6): `task_assigned`, `due_soon`, `comment_added`,
-  `project_created`, `member_invited`, `task_completed`. `notify.ts`
-  supports all of them; nothing calls `sendNotification()` for these six.
 - **Gmail reply-parsing is blocked on a real Google Workspace account**
   with admin access to set up OAuth + Pub/Sub — see section 6. Until then,
   `/api/webhooks/gmail-reply` intentionally returns `501`.
