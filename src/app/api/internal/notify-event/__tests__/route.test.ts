@@ -3,7 +3,7 @@ import { POST } from '../route';
 import { sendNotification } from '@/lib/notifications/notify';
 
 jest.mock('@/lib/notifications/notify', () => ({
-  sendNotification: jest.fn().mockResolvedValue(undefined),
+  sendNotification: jest.fn().mockResolvedValue({ processed: true }),
 }));
 
 function makeRequest(body: unknown, secret?: string): NextRequest {

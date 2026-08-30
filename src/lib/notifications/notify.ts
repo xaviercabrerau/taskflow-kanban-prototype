@@ -237,6 +237,18 @@ export interface SendNotificationOptions {
   channels?: Channel[];
 }
 
+export interface SendNotificationResult {
+  /** false only for a validation failure — the malformed-payload class of
+   * bug that already caused one silent incident (see git history:
+   * 20260828200000_fix_notify_event_field_name_mismatch.sql). Email/in-app
+   * send failures still return true — those are recorded to failed_jobs
+   * but were never silent (a thrown error was always logged), so they
+   * don't need to change the caller-facing contract. */
+  processed: boolean;
+  /** Present only when processed is false. */
+  reason?: string;
+}
+
 /**
  * Send a notification for an event: email and/or in-app, per the user's
  * preferences. Best-effort — logs and records failed_jobs on error rather
@@ -246,9 +258,19 @@ export interface SendNotificationOptions {
 export async function sendNotification(
   eventInput: unknown,
   options: SendNotificationOptions = {}
-): Promise<void> {
+): Promise<SendNotificationResult> {
   const event = validateEvent(eventInput);
-  if (!event) return;
+  if (!event) {
+    const reason = 'Malformed or unrecognized notification event payload';
+    try {
+      await recordFailedJob(getServiceClient(), undefined, undefined, reason);
+    } catch (err) {
+      // getServiceClient() itself can throw if env vars are missing; don't
+      // let that mask the original validation failure.
+      console.error('Failed to record validation-failure failed_jobs entry', err);
+    }
+    return { processed: false, reason };
+  }
 
   const supabase = getServiceClient();
   const wanted = new Set(options.channels ?? ['email', 'in_app']);
@@ -274,4 +296,6 @@ export async function sendNotification(
       await recordFailedJob(supabase, event.type, event.userId, `InApp: ${message}`);
     }
   }
+
+  return { processed: true };
 }

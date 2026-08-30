@@ -6,6 +6,7 @@ import { isOverdue, formatDue, priorityLabel, type Task } from "@/lib/types";
 import type { OrgMember } from "@/lib/supabase/members-repo";
 import type { MetricsReport } from "@/lib/supabase/metrics-repo";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
+import { useClickableRow } from "@/hooks/useClickableRow";
 import Shell from "./Shell";
 
 const DONUT_COLORS = ["var(--low)", "var(--medium)", "var(--accent)", "var(--muted)"];
@@ -18,6 +19,28 @@ function isoDaysAgo(days: number): string {
 
 function average(values: number[]): number {
   return values.length ? values.reduce((sum, v) => sum + v, 0) / values.length : 0;
+}
+
+interface MemberSummaryRowData {
+  membershipId: string;
+  label: string;
+  active: number;
+  overdue: number;
+  done: number;
+}
+
+function MemberSummaryRow({ row, onOpen }: { row: MemberSummaryRowData; onOpen: () => void }) {
+  const rowProps = useClickableRow(onOpen);
+  return (
+    <tr className="member-summary-row-clickable" {...rowProps}>
+      <td>{row.label}</td>
+      <td className="mono">{row.active}</td>
+      <td className="mono" style={{ color: row.overdue ? "var(--high)" : undefined }}>
+        {row.overdue}
+      </td>
+      <td className="mono">{row.done}</td>
+    </tr>
+  );
 }
 
 export default function DashboardView() {
@@ -377,7 +400,10 @@ export default function DashboardView() {
                 Últimos 30 días. Throughput = tareas completadas/día. Cycle time = horas promedio en moverse entre columnas.
               </p>
               {snapshotFeedback && (
-                <p style={{ color: snapshotFeedback.ok ? "var(--accent)" : "var(--high)", fontSize: 12.5, marginTop: 4 }}>
+                <p
+                  role={snapshotFeedback.ok ? "status" : "alert"}
+                  style={{ color: snapshotFeedback.ok ? "var(--accent)" : "var(--high)", fontSize: 12.5, marginTop: 4 }}
+                >
                   {snapshotFeedback.message}
                 </p>
               )}
@@ -420,18 +446,11 @@ export default function DashboardView() {
                   </thead>
                   <tbody>
                     {metrics.memberBreakdown.map((row) => (
-                      <tr
+                      <MemberSummaryRow
                         key={row.membershipId}
-                        className="member-summary-row-clickable"
-                        onClick={() => openPersonTasks(row.label, row.tasks)}
-                      >
-                        <td>{row.label}</td>
-                        <td className="mono">{row.active}</td>
-                        <td className="mono" style={{ color: row.overdue ? "var(--high)" : undefined }}>
-                          {row.overdue}
-                        </td>
-                        <td className="mono">{row.done}</td>
-                      </tr>
+                        row={row}
+                        onOpen={() => openPersonTasks(row.label, row.tasks)}
+                      />
                     ))}
                   </tbody>
                 </table>

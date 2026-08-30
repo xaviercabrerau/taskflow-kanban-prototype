@@ -156,15 +156,24 @@ describe('sendNotification', () => {
   it('records a failed_jobs entry when the recipient has no email on file, without throwing', async () => {
     profileResult = { data: { full_name: 'Ana QA', email: null } };
 
-    await expect(sendNotification(baseEvent, { channels: ['email'] })).resolves.toBeUndefined();
+    await expect(sendNotification(baseEvent, { channels: ['email'] })).resolves.toEqual({ processed: true });
 
     expect(insertMock).toHaveBeenCalledWith(
       expect.objectContaining({ error_message: expect.stringContaining('No email on file') })
     );
   });
 
-  it('silently no-ops on an invalid event instead of throwing', async () => {
-    await expect(sendNotification({ type: 'bogus' })).resolves.toBeUndefined();
+  it('reports processed:false and records a failed_jobs entry on an invalid event, instead of throwing', async () => {
+    // Regression test: a malformed payload used to be indistinguishable from
+    // success (undefined return, no failed_jobs row) — the exact silent-
+    // failure shape that let a real trigger bug go undetected in production.
+    await expect(sendNotification({ type: 'bogus' })).resolves.toEqual({
+      processed: false,
+      reason: expect.any(String),
+    });
     expect(sendEmail).not.toHaveBeenCalled();
+    expect(insertMock).toHaveBeenCalledWith(
+      expect.objectContaining({ error_message: expect.stringContaining('Malformed') })
+    );
   });
 });

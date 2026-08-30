@@ -42,12 +42,15 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
 
   const { channels, ...event } = (body as Record<string, unknown>) || {};
 
-  // Best-effort by design (see notify.ts) — always 200 once authorized and
-  // parseable; validation failures are logged internally, not surfaced as
-  // an HTTP error, since the caller (a DB trigger) can't act on a retry.
-  await sendNotification(event, {
+  // Still always 200 once authorized and parseable — the caller (a DB
+  // trigger via net.http_post) can't act on a retry either way. But the
+  // response body and a failed_jobs row now distinguish "processed" from
+  // "rejected at validation" instead of collapsing both into the same
+  // { processed: true }, which is exactly what let a payload field-name
+  // mismatch go undetected in production until an unrelated audit found it.
+  const result = await sendNotification(event, {
     channels: Array.isArray(channels) ? (channels as Channel[]) : undefined,
   });
 
-  return NextResponse.json({ processed: true });
+  return NextResponse.json(result);
 }

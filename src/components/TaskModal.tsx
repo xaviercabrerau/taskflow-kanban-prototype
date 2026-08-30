@@ -153,7 +153,17 @@ export default function TaskModal({
 
     fetchComments(supabase, taskId)
       .then((data) => {
-        if (!cancelled) setComments(data);
+        // Merge rather than replace: if the user added a comment while this
+        // initial load was still in flight, the optimistic entry (already
+        // persisted server-side) might not be in `data` yet and would
+        // otherwise vanish from the UI until the modal reopens.
+        if (!cancelled) {
+          setComments((prev) => {
+            const ids = new Set(data.map((c) => c.id));
+            const localOnly = prev.filter((c) => !ids.has(c.id));
+            return [...data, ...localOnly];
+          });
+        }
       })
       .catch((err) => {
         console.error("No se pudieron cargar los comentarios:", err);
@@ -165,7 +175,14 @@ export default function TaskModal({
 
     fetchAttachments(supabase, taskId)
       .then((data) => {
-        if (!cancelled) setAttachments(data);
+        // Same merge rationale as fetchComments above — see that comment.
+        if (!cancelled) {
+          setAttachments((prev) => {
+            const ids = new Set(data.map((a) => a.id));
+            const localOnly = prev.filter((a) => !ids.has(a.id));
+            return [...localOnly, ...data];
+          });
+        }
       })
       .catch((err) => {
         console.error("No se pudieron cargar los adjuntos:", err);
