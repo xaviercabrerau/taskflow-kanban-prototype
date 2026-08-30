@@ -38,9 +38,18 @@ export async function sendViaGmail(input: SendViaGmailInput): Promise<void> {
     throw new Error("Gmail no está conectado para esta organización.");
   }
 
+  // Defense in depth against RFC 5322 header injection: `to` and `subject`
+  // (the latter is often a user-controlled task title) end up as literal
+  // header lines below, so a stray \r or \n could inject extra headers
+  // (e.g. Bcc:) into the org's own outbound message. Callers should already
+  // validate `to`; stripping here means this function is safe even if a
+  // future caller doesn't.
+  const safeTo = input.to.replace(/[\r\n]/g, "");
+  const safeSubject = input.subject.replace(/[\r\n]/g, " ");
+
   const rawMessage = [
-    `To: ${input.to}`,
-    `Subject: ${input.subject}`,
+    `To: ${safeTo}`,
+    `Subject: ${safeSubject}`,
     "Content-Type: text/plain; charset=utf-8",
     "",
     input.bodyText,
