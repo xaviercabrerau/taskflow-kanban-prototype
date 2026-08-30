@@ -237,6 +237,17 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
   const [toasts, setToasts] = useState<Toast[]>([]);
+  // Rastrea los timers de auto-descarte por id de toast, para poder
+  // cancelarlos si el usuario lo cierra a mano o el provider se desmonta
+  // antes de que se cumplan los 5s — sin esto, el timer huérfano igual
+  // dispara un setToasts sobre un toast que ya no existe.
+  const toastTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
+  useEffect(() => {
+    const timers = toastTimersRef.current;
+    return () => {
+      Object.values(timers).forEach(clearTimeout);
+    };
+  }, []);
 
   // Feedback visible para fallos que antes solo iban a console.error: un
   // fetch silencioso en loadForBoard, o una acción optimista (mover/editar
@@ -246,12 +257,18 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const pushToast = useCallback((message: string, tone: Toast["tone"] = "error") => {
     const id = crypto.randomUUID();
     setToasts((prev) => [...prev, { id, message, tone }]);
-    setTimeout(() => {
+    toastTimersRef.current[id] = setTimeout(() => {
+      delete toastTimersRef.current[id];
       setToasts((prev) => prev.filter((t) => t.id !== id));
     }, 5000);
   }, []);
 
   const dismissToast = useCallback((id: string) => {
+    const timer = toastTimersRef.current[id];
+    if (timer) {
+      clearTimeout(timer);
+      delete toastTimersRef.current[id];
+    }
     setToasts((prev) => prev.filter((t) => t.id !== id));
   }, []);
 

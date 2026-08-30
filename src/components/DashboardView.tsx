@@ -32,8 +32,10 @@ interface MemberSummaryRowData {
 function MemberSummaryRow({ row, onOpen }: { row: MemberSummaryRowData; onOpen: () => void }) {
   const rowProps = useClickableRow(onOpen);
   return (
-    <tr className="member-summary-row-clickable" {...rowProps}>
-      <td>{row.label}</td>
+    <tr className="member-summary-row-clickable">
+      <td>
+        <span {...rowProps}>{row.label}</span>
+      </td>
       <td className="mono">{row.active}</td>
       <td className="mono" style={{ color: row.overdue ? "var(--high)" : undefined }}>
         {row.overdue}

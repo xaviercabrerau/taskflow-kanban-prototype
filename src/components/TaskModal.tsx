@@ -194,7 +194,14 @@ export default function TaskModal({
 
     fetchChecklists(supabase, taskId)
       .then((data) => {
-        if (!cancelled) setChecklists(data);
+        // Same merge rationale as fetchComments above — see that comment.
+        if (!cancelled) {
+          setChecklists((prev) => {
+            const ids = new Set(data.map((c) => c.id));
+            const localOnly = prev.filter((c) => !ids.has(c.id));
+            return [...data, ...localOnly];
+          });
+        }
       })
       .catch((err) => {
         console.error("No se pudieron cargar los checklists:", err);
@@ -206,9 +213,16 @@ export default function TaskModal({
 
     Promise.all([fetchOrgTags(supabase, tenantId ?? ""), fetchTaskTags(supabase, taskId)])
       .then(([allTags, currentTags]) => {
+        // orgTags is a plain catalog replace (no local-only-add race, tags
+        // are created via a separate org-wide flow, not this task's modal).
+        // taskTags gets the same merge rationale as fetchComments above.
         if (!cancelled) {
           setOrgTags(allTags);
-          setTaskTags(currentTags);
+          setTaskTags((prev) => {
+            const ids = new Set(currentTags.map((t) => t.id));
+            const localOnly = prev.filter((t) => !ids.has(t.id));
+            return [...currentTags, ...localOnly];
+          });
         }
       })
       .catch((err) => {
