@@ -86,15 +86,17 @@ export async function proxy(request: NextRequest) {
     Sentry.captureException(error);
   }
 
-  const isAuthRoute = request.nextUrl.pathname.startsWith("/login");
-  if (!user && !isAuthRoute) {
+  const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
+  const isPublicAuthRoute =
+    isLoginRoute || request.nextUrl.pathname.startsWith("/reset-password");
+  if (!user && !isPublicAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
     const redirectResponse = NextResponse.redirect(url);
     redirectResponse.headers.set("x-request-id", requestId);
     return redirectResponse;
   }
-  if (user && isAuthRoute) {
+  if (user && isLoginRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/";
     const redirectResponse = NextResponse.redirect(url);

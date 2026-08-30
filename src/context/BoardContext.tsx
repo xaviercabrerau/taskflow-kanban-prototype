@@ -378,19 +378,28 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   useEffect(() => {
     let cancelled = false;
 
-    // BoardProvider envuelve toda la app, incluida /login — un visitante
-    // sin sesión (p.ej. viendo la pantalla de login) llega aquí antes de
-    // autenticarse. Eso no es una falla real: así que si no hay sesión,
-    // salimos en silencio sin loguear un error esperado como si fuera un bug.
+    // BoardProvider envuelve toda la app, incluida /login y /reset-password —
+    // un visitante sin sesión (p.ej. viendo la pantalla de login, o abriendo
+    // el enlace de recuperación de contraseña antes de que el cliente procese
+    // el token de la URL) llega aquí antes de autenticarse. Eso no es una
+    // falla real: así que si no hay sesión, salimos en silencio sin loguear
+    // un error esperado como si fuera un bug.
     // No había ningún guard que mandara a /login en este caso — sin
     // middleware, un visitante sin sesión veía el shell completo de la
     // app (topbar, tabs, iconos) con un tablero vacío y ningún mensaje.
+    // /reset-password se excluye del mismo modo que /login: si no, este
+    // efecto redirige a /login antes de que la página pueda procesar el
+    // enlace de recuperación, anulando la excepción hecha para esa ruta en
+    // src/proxy.ts.
     const applySession = async (session: Session | null) => {
       if (cancelled) return;
       if (!session) {
         setLoading(false);
         hasLoadedRef.current = false;
-        if (pathnameRef.current !== "/login") {
+        const isPublicAuthRoute =
+          pathnameRef.current === "/login" ||
+          pathnameRef.current?.startsWith("/reset-password");
+        if (!isPublicAuthRoute) {
           router.replace("/login");
         }
         return;
