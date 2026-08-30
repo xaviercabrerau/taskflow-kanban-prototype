@@ -1617,3 +1617,13 @@ tbody tr.task-row:hover {
 .admin-panel-stack > .admin-panel:last-child {
   margin-bottom: 0;
 }
+
+.link-button {
+  background: none;
+  border: none;
+  color: var(--accent, #2f7d6b);
+  text-decoration: underline;
+  cursor: pointer;
+  padding: 0;
+  text-align: left;
+}
