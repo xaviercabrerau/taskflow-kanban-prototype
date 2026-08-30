@@ -102,6 +102,12 @@ import type { Json } from "@/lib/supabase/database.types";
 const EMPTY_STATE: BoardState = { tasks: {}, columns: [] };
 const COLUMN_COLOR_CYCLE = ["--low", "--medium", "--accent", "--muted", "--high"];
 
+export interface Toast {
+  id: string;
+  message: string;
+  tone: "error" | "success";
+}
+
 interface BoardContextValue {
   supabase: SupabaseClient<Database>;
   userId: string | null;
@@ -183,6 +189,8 @@ interface BoardContextValue {
     isActive: boolean
   ) => Promise<{ ok: boolean; message: string }>;
   deleteIntegration: (integrationId: string) => Promise<{ ok: boolean; message: string }>;
+  toasts: Toast[];
+  dismissToast: (id: string) => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -228,6 +236,24 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [marketplaceTemplates, setMarketplaceTemplates] = useState<MarketplaceTemplate[]>([]);
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
+  const [toasts, setToasts] = useState<Toast[]>([]);
+
+  // Feedback visible para fallos que antes solo iban a console.error: un
+  // fetch silencioso en loadForBoard, o una acción optimista (mover/editar
+  // tarea, etc.) que se revierte porque la llamada remota falló. Auto-
+  // descarta a los 5s; el usuario también puede cerrarlo a mano (ver
+  // dismissToast, expuesto en el contexto y usado por el stack en Shell).
+  const pushToast = useCallback((message: string, tone: Toast["tone"] = "error") => {
+    const id = crypto.randomUUID();
+    setToasts((prev) => [...prev, { id, message, tone }]);
+    setTimeout(() => {
+      setToasts((prev) => prev.filter((t) => t.id !== id));
+    }, 5000);
+  }, []);
+
+  const dismissToast = useCallback((id: string) => {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+  }, []);
 
   // Contador monotónico para descartar respuestas de loadForBoard fuera de
   // orden (p.ej. doble click en switchWorkspace): solo la llamada más
@@ -258,11 +284,17 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       // owner.
       fetchMembers(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setMembers(v); })
-        .catch((err) => console.error("No se pudo cargar la lista de miembros:", err));
+        .catch((err) => {
+          console.error("No se pudo cargar la lista de miembros:", err);
+          pushToast("No se pudo cargar la lista de miembros.");
+        });
 
       listWorkspaces(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setWorkspaces(v); })
-        .catch((err) => console.error("No se pudieron cargar las áreas de trabajo:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar las áreas de trabajo:", err);
+          pushToast("No se pudieron cargar las áreas de trabajo.");
+        });
 
       // RBAC granular (Sección 1.4): permisos reales del usuario sobre este
       // board (el owner los recibe todos vía el bypass de has_permission()).
@@ -287,53 +319,89 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
       fetchNotifications(supabase, board.userId)
         .then((v) => { if (!isStale()) setNotifications(v); })
-        .catch((err) => console.error("No se pudieron cargar las notificaciones:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar las notificaciones:", err);
+          pushToast("No se pudieron cargar las notificaciones.");
+        });
 
       fetchAutomationRules(supabase, board.workspaceId)
         .then((v) => { if (!isStale()) setAutomationRules(v); })
-        .catch((err) => console.error("No se pudieron cargar las reglas de automatización:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar las reglas de automatización:", err);
+          pushToast("No se pudieron cargar las reglas de automatización.");
+        });
 
       fetchInboundWebhooks(supabase, board.boardId)
         .then((v) => { if (!isStale()) setInboundWebhooks(v); })
-        .catch((err) => console.error("No se pudieron cargar los webhooks entrantes:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar los webhooks entrantes:", err);
+          pushToast("No se pudieron cargar los webhooks entrantes.");
+        });
 
       fetchMcpSessions(supabase, board.userId)
         .then((v) => { if (!isStale()) setMcpSessions(v); })
-        .catch((err) => console.error("No se pudieron cargar los tokens MCP:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar los tokens MCP:", err);
+          pushToast("No se pudieron cargar los tokens MCP.");
+        });
 
       fetchPermissionsCatalog(supabase)
         .then((v) => { if (!isStale()) setPermissionsCatalog(v); })
-        .catch((err) => console.error("No se pudo cargar el catálogo de permisos:", err));
+        .catch((err) => {
+          console.error("No se pudo cargar el catálogo de permisos:", err);
+          pushToast("No se pudo cargar el catálogo de permisos.");
+        });
 
       fetchRoles(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setRoles(v); })
-        .catch((err) => console.error("No se pudieron cargar los roles:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar los roles:", err);
+          pushToast("No se pudieron cargar los roles.");
+        });
 
       fetchMemberRoleIds(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setMemberRoleIds(v); })
-        .catch((err) => console.error("No se pudieron cargar los roles de los miembros:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar los roles de los miembros:", err);
+          pushToast("No se pudieron cargar los roles de los miembros.");
+        });
 
       fetchOrgSettings(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setOrgSettings(v); })
-        .catch((err) => console.error("No se pudo cargar la configuración de seguridad:", err));
+        .catch((err) => {
+          console.error("No se pudo cargar la configuración de seguridad:", err);
+          pushToast("No se pudo cargar la configuración de seguridad.");
+        });
 
       fetchAuditLog(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setAuditLog(v); })
-        .catch((err) => console.error("No se pudo cargar el registro de auditoría:", err));
+        .catch((err) => {
+          console.error("No se pudo cargar el registro de auditoría:", err);
+          pushToast("No se pudo cargar el registro de auditoría.");
+        });
 
       fetchMarketplaceTemplates(supabase)
         .then((v) => { if (!isStale()) setMarketplaceTemplates(v); })
-        .catch((err) => console.error("No se pudo cargar el marketplace de plantillas:", err));
+        .catch((err) => {
+          console.error("No se pudo cargar el marketplace de plantillas:", err);
+          pushToast("No se pudo cargar el marketplace de plantillas.");
+        });
 
       fetchOwnTemplates(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setOwnTemplates(v); })
-        .catch((err) => console.error("No se pudieron cargar tus plantillas:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar tus plantillas:", err);
+          pushToast("No se pudieron cargar tus plantillas.");
+        });
 
       fetchIntegrations(supabase, board.tenantId)
         .then((v) => { if (!isStale()) setIntegrations(v); })
-        .catch((err) => console.error("No se pudieron cargar las integraciones:", err));
+        .catch((err) => {
+          console.error("No se pudieron cargar las integraciones:", err);
+          pushToast("No se pudieron cargar las integraciones.");
+        });
     },
-    [supabase]
+    [supabase, pushToast]
   );
 
   const load = useCallback(async () => {
@@ -529,10 +597,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       positionsRef.current[taskId] = newPosition;
       moveTaskRemote(supabase, taskId, toColumnId, newPosition).catch((err) => {
         console.error("No se pudo mover la tarea en Supabase (¿falta el permiso task.update?):", err);
+        pushToast("No se pudo mover la tarea, se revirtió el cambio.");
         load(); // revierte el movimiento optimista resincronizando desde la BD
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const addTask = useCallback(
@@ -556,10 +625,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         })
         .catch((err) => {
           console.error("No se pudo crear la tarea en Supabase (¿falta el permiso task.create?):", err);
+          pushToast("No se pudo crear la tarea.");
           load();
         });
     },
-    [supabase, state.columns, load]
+    [supabase, state.columns, load, pushToast]
   );
 
   const addColumn = useCallback(
@@ -586,10 +656,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       setState((prev) => ({ ...prev, tasks: { ...prev.tasks, [task.id]: task } }));
       updateTaskFields(supabase, task).catch((err) => {
         console.error("No se pudo actualizar la tarea en Supabase (¿falta el permiso task.update?):", err);
+        pushToast("No se pudo guardar el cambio, se revirtió.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const deleteTask = useCallback(
@@ -606,10 +677,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       delete positionsRef.current[taskId];
       deleteTaskRemote(supabase, taskId).catch((err) => {
         console.error("No se pudo eliminar la tarea en Supabase (¿falta el permiso task.delete?):", err);
+        pushToast("No se pudo eliminar la tarea, se restauró.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const reset = useCallback(() => {
@@ -653,21 +725,23 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       setNotifications((prev) =>
         prev.map((n) => (n.id === notificationId ? { ...n, readAt: n.readAt ?? new Date().toISOString() } : n))
       );
-      markNotificationRead(supabase, notificationId).catch((err) =>
-        console.error("No se pudo marcar la notificación como leída:", err)
-      );
+      markNotificationRead(supabase, notificationId).catch((err) => {
+        console.error("No se pudo marcar la notificación como leída:", err);
+        pushToast("No se pudo marcar la notificación como leída.");
+      });
     },
-    [supabase]
+    [supabase, pushToast]
   );
 
   const markAllRead = useCallback(() => {
     if (!userId) return;
     const now = new Date().toISOString();
     setNotifications((prev) => prev.map((n) => ({ ...n, readAt: n.readAt ?? now })));
-    markAllNotificationsRead(supabase, userId).catch((err) =>
-      console.error("No se pudieron marcar todas las notificaciones como leídas:", err)
-    );
-  }, [supabase, userId]);
+    markAllNotificationsRead(supabase, userId).catch((err) => {
+      console.error("No se pudieron marcar todas las notificaciones como leídas:", err);
+      pushToast("No se pudieron marcar todas las notificaciones como leídas.");
+    });
+  }, [supabase, userId, pushToast]);
 
   const createRule = useCallback(
     async (params: {
@@ -701,10 +775,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       setAutomationRules((prev) => prev.map((r) => (r.id === ruleId ? { ...r, isActive } : r)));
       toggleAutomationRule(supabase, ruleId, isActive).catch((err) => {
         console.error("No se pudo actualizar la regla de automatización:", err);
+        pushToast("No se pudo actualizar la regla de automatización, se revirtió.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const deleteRule = useCallback(
@@ -712,10 +787,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       setAutomationRules((prev) => prev.filter((r) => r.id !== ruleId));
       deleteAutomationRule(supabase, ruleId).catch((err) => {
         console.error("No se pudo eliminar la regla de automatización:", err);
+        pushToast("No se pudo eliminar la regla, se restauró.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const createWebhook = useCallback(
@@ -738,10 +814,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       setInboundWebhooks((prev) => prev.map((w) => (w.id === id ? { ...w, isActive } : w)));
       toggleInboundWebhook(supabase, id, isActive).catch((err) => {
         console.error("No se pudo actualizar el webhook entrante:", err);
+        pushToast("No se pudo actualizar el webhook, se revirtió.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const createMcpToken = useCallback(
@@ -768,10 +845,11 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       );
       revokeMcpSession(supabase, id).catch((err) => {
         console.error("No se pudo revocar el token MCP:", err);
+        pushToast("No se pudo revocar el token, se restauró.");
         load();
       });
     },
-    [supabase, load]
+    [supabase, load, pushToast]
   );
 
   const createRole = useCallback(
@@ -1017,6 +1095,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       integrations,
       saveIntegration,
       deleteIntegration,
+      toasts,
+      dismissToast,
     }),
     [
       supabase,
@@ -1077,6 +1157,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       integrations,
       saveIntegration,
       deleteIntegration,
+      toasts,
+      dismissToast,
     ]
   );
 

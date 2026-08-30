@@ -46,6 +46,8 @@ export default function Shell({ children, onNewTask }: ShellProps) {
     supabase,
     members,
     userId,
+    toasts,
+    dismissToast,
   } = useBoard();
   const currentMember = members.find((m) => m.userId === userId);
   const currentUserLabel = currentMember?.fullName || currentMember?.email || "Sesión activa";
@@ -285,6 +287,28 @@ export default function Shell({ children, onNewTask }: ShellProps) {
       </div>
 
       <main id="main-content">{children}</main>
+
+      {toasts.length > 0 && (
+        <div className="toast-stack" role="region" aria-label="Notificaciones">
+          {toasts.map((toast) => (
+            <div
+              key={toast.id}
+              className={`toast toast-${toast.tone}`}
+              role={toast.tone === "error" ? "alert" : "status"}
+            >
+              <span>{toast.message}</span>
+              <button
+                type="button"
+                className="toast-dismiss"
+                onClick={() => dismissToast(toast.id)}
+                aria-label="Cerrar notificación"
+              >
+                ×
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
     </>
   );
 }

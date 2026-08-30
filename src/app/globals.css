@@ -1618,6 +1618,48 @@ tbody tr.task-row:hover {
   margin-bottom: 0;
 }
 
+.toast-stack {
+  position: fixed;
+  bottom: 16px;
+  right: 16px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  z-index: 1000;
+  max-width: 360px;
+}
+.toast {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  padding: 10px 12px;
+  border-radius: 8px;
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  box-shadow: 0 4px 12px rgba(0, 0, 0, 0.15);
+  font-size: 13.5px;
+}
+.toast-error {
+  border-color: var(--high);
+  color: var(--high);
+}
+.toast-success {
+  border-color: var(--low);
+  color: var(--low);
+}
+.toast span {
+  flex: 1;
+}
+.toast-dismiss {
+  background: none;
+  border: none;
+  color: inherit;
+  cursor: pointer;
+  font-size: 16px;
+  line-height: 1;
+  padding: 0 2px;
+}
+
 .link-button {
   background: none;
   border: none;
