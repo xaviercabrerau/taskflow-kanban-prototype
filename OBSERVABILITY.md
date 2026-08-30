@@ -238,9 +238,9 @@ same request that triggered it. There is no retry queue — failures are
 recorded to the `failed_jobs` table for visibility, and callers are
 expected to treat delivery as best-effort.
 
-**What's actually wired end-to-end today**: two of the eight event types —
-`task_mentioned` and `status_changed`. The Postgres triggers that already
-created in-app notifications for these (`notify_comment_mentions`,
+**What's actually wired end-to-end today**: all eight event types. The
+Postgres triggers that already created in-app notifications for
+`task_mentioned` and `status_changed` (`notify_comment_mentions`,
 `notify_task_status_changed`) were extended to also call
 `POST /api/internal/notify-event` via `net.http_post` (the same pattern
 used by outbound automation webhooks), which sends the email. No client
@@ -248,13 +248,12 @@ code changes were needed. Verified live: a real mention was inserted,
 the in-app row was created, the webhook reached the app (HTTP 200), and
 the email sent via Resend with no `failed_jobs` row recorded.
 
-**What's built but NOT wired**: the other six event types
-(`task_assigned`, `due_soon`, `comment_added` as a general event separate
-from mentions, `project_created`, `member_invited`, `task_completed`).
-`notify.ts` supports all eight, but nothing in the app calls
-`sendNotification()` for these six yet — they'd need either a new trigger
-(mirroring the two above) or a client-side call site, depending on where
-each event actually originates.
+All 8 event types are now wired via Postgres triggers (see
+`supabase/migrations/20260829010000_wire_remaining_notification_events.sql`)
+— `task_assigned`/`comment_added`/`task_completed` on their respective
+tables, `member_invited` on `organization_members`, `project_created` on
+`boards` (scoped to org owners/admins, not every member), and `due_soon`
+extending the existing hourly cron function.
 
 **Blocked entirely**: the *inbound* half of the original design — parsing
 Gmail replies to update tasks via email (`/api/webhooks/gmail-reply`) —
