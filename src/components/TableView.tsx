@@ -1,6 +1,6 @@
 "use client";
 
-import { Fragment, useState } from "react";
+import { Fragment, useMemo, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
 import { Task, assigneeColor, assigneeInitial, formatDue, isOverdue, priorityLabel } from "@/lib/types";
 import Shell from "./Shell";
@@ -44,6 +44,15 @@ export default function TableView() {
     null
   );
 
+  const groupedColumns = useMemo(
+    () =>
+      state.columns.map((col) => ({
+        col,
+        tasks: col.taskIds.map((id) => state.tasks[id]).filter(Boolean),
+      })),
+    [state.columns, state.tasks]
+  );
+
   return (
     <Shell onNewTask={() => setModal({ mode: "create", columnId: state.columns[0]?.id })}>
       <div className="page-wrap">
@@ -58,8 +67,7 @@ export default function TableView() {
               </tr>
             </thead>
             <tbody>
-              {state.columns.map((col) => {
-                const tasks = col.taskIds.map((id) => state.tasks[id]).filter(Boolean);
+              {groupedColumns.map(({ col, tasks }) => {
                 return (
                   <Fragment key={col.id}>
                     <tr className="group-row">
