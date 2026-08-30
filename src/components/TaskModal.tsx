@@ -68,7 +68,7 @@ export default function TaskModal({
   onSave,
   onDelete,
 }: TaskModalProps) {
-  const { can, supabase, userId, tenantId, members } = useBoard();
+  const { can, supabase, userId, tenantId, members, integrations } = useBoard();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? "medium");
   const [assignee, setAssignee] = useState(initial?.assignee ?? "");
@@ -79,6 +79,10 @@ export default function TaskModal({
   useDialogA11y(modalRef, onClose);
 
   const taskId = mode === "edit" ? initial?.id : undefined;
+
+  const googleConnected = integrations.some(
+    (i) => i.provider === "google" && i.hasCredential && i.isActive
+  );
 
   // `members` se carga de forma asíncrona en BoardContext y puede seguir
   // vacío cuando este modal se monta (loading=false no espera a members).
@@ -104,6 +108,12 @@ export default function TaskModal({
   const [attachmentsLoading, setAttachmentsLoading] = useState(Boolean(taskId));
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
+
+  const [forwardEmailOpen, setForwardEmailOpen] = useState(false);
+  const [forwardTo, setForwardTo] = useState("");
+  const [forwardNote, setForwardNote] = useState("");
+  const [forwardingEmail, setForwardingEmail] = useState(false);
+  const [forwardResult, setForwardResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const [checklists, setChecklists] = useState<Checklist[]>([]);
   const [checklistsLoading, setChecklistsLoading] = useState(Boolean(taskId));
@@ -375,6 +385,35 @@ export default function TaskModal({
       setAttachmentsError(err instanceof Error ? err.message : "No se pudo adjuntar el archivo.");
     } finally {
       setAttachingDrive(false);
+    }
+  }
+
+  async function handleForwardEmail(e: React.FormEvent) {
+    e.preventDefault();
+    const to = forwardTo.trim();
+    if (!to || !taskId || forwardingEmail) return;
+    setForwardingEmail(true);
+    setForwardResult(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/forward-email`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ to, note: forwardNote.trim() || undefined }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudo enviar el email.");
+      }
+      setForwardResult({ ok: true, message: `Tarea reenviada a ${to}.` });
+      setForwardTo("");
+      setForwardNote("");
+    } catch (err) {
+      setForwardResult({
+        ok: false,
+        message: err instanceof Error ? err.message : "No se pudo enviar el email.",
+      });
+    } finally {
+      setForwardingEmail(false);
     }
   }
 
@@ -836,6 +875,63 @@ export default function TaskModal({
                   </ul>
                 )}
               </div>
+
+              {taskId && googleConnected && (
+                <div className="field task-section">
+                  <label>Reenviar por email</label>
+                  {!forwardEmailOpen ? (
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        setForwardEmailOpen(true);
+                        setForwardResult(null);
+                      }}
+                    >
+                      📧 Reenviar por email
+                    </button>
+                  ) : (
+                    <form onSubmit={handleForwardEmail}>
+                      <div className="comment-input-wrap" style={{ marginTop: 8 }}>
+                        <input
+                          type="email"
+                          value={forwardTo}
+                          onChange={(e) => setForwardTo(e.target.value)}
+                          placeholder="Email del destinatario"
+                          disabled={forwardingEmail}
+                          required
+                        />
+                      </div>
+                      <textarea
+                        value={forwardNote}
+                        onChange={(e) => setForwardNote(e.target.value)}
+                        placeholder="Nota (opcional)"
+                        disabled={forwardingEmail}
+                        rows={2}
+                        style={{ width: "100%", marginTop: 8 }}
+                      />
+                      <div style={{ marginTop: 8 }}>
+                        <button
+                          type="submit"
+                          className="btn primary"
+                          disabled={!forwardTo.trim() || forwardingEmail}
+                        >
+                          {forwardingEmail ? "Enviando…" : "Enviar"}
+                        </button>
+                      </div>
+                    </form>
+                  )}
+                  {forwardResult && (
+                    <p
+                      role={forwardResult.ok ? undefined : "alert"}
+                      className={forwardResult.ok ? undefined : "field-error"}
+                      style={forwardResult.ok ? { color: "var(--low)", fontSize: 13.5 } : undefined}
+                    >
+                      {forwardResult.message}
+                    </p>
+                  )}
+                </div>
+              )}
 
               <div className="field task-section">
                 <label>Actividad</label>
