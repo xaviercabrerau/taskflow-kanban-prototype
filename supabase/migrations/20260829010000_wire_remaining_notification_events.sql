@@ -136,4 +136,81 @@ begin
     end;
   end loop;
 end;
-$function$
+$function$;
+
+-- NOTE (discovered during live verification of task_completed): as with
+-- task_assigned in task 1, the notifications_type_check constraint did not
+-- yet allow type='task_completed'. Widening additively again, same
+-- pattern, keeping every previously allowed value.
+alter table public.notifications drop constraint notifications_type_check;
+alter table public.notifications add constraint notifications_type_check
+  check (type = any (array['assigned'::text, 'mentioned'::text, 'due_soon'::text, 'status_changed'::text, 'task_assigned'::text, 'task_completed'::text]));
+
+-- ============================================================
+-- 3. task_completed — fires when a task's column changes into
+-- a done-state column (and wasn't already in one). Notifies
+-- assignees, distinct from status_changed which notifies the
+-- creator on any column move.
+-- ============================================================
+create or replace function public.notify_task_completed()
+ returns trigger
+ language plpgsql
+ security definer
+ set search_path to 'public'
+as $function$
+declare
+  actor uuid := auth.uid();
+  was_done boolean;
+  is_done boolean;
+  assignee_id uuid;
+  notify_secret text;
+begin
+  if new.column_id is distinct from old.column_id then
+    select is_done_state into is_done from board_columns where id = new.column_id;
+    select is_done_state into was_done from board_columns where id = old.column_id;
+
+    if coalesce(is_done, false) and not coalesce(was_done, false) then
+      select decrypted_secret into notify_secret from vault.decrypted_secrets where name = 'internal_notify_secret';
+
+      for assignee_id in
+        select ta.user_id from task_assignees ta where ta.task_id = new.id
+      loop
+        if assignee_id is distinct from actor then
+          insert into notifications (tenant_id, user_id, type, title, body, related_task_id, actor_id)
+          values (
+            new.tenant_id,
+            assignee_id,
+            'task_completed',
+            'Tarea completada',
+            format('"%s" se marcó como completada', new.title),
+            new.id,
+            actor
+          );
+
+          if notify_secret is not null then
+            perform net.http_post(
+              url := 'https://taskflow-kanban-prototype-xaviercabrerau-1550s-projects.vercel.app/api/internal/notify-event',
+              body := jsonb_build_object(
+                'eventType', 'task_completed',
+                'userId', assignee_id,
+                'organizationId', new.tenant_id,
+                'taskId', new.id,
+                'actorId', actor,
+                'channels', jsonb_build_array('email'),
+                'data', jsonb_build_object('taskTitle', new.title)
+              ),
+              headers := jsonb_build_object('Content-Type', 'application/json', 'x-internal-secret', notify_secret)
+            );
+          end if;
+        end if;
+      end loop;
+    end if;
+  end if;
+  return new;
+end;
+$function$;
+
+drop trigger if exists tasks_notify_completed on tasks;
+create trigger tasks_notify_completed
+  after update on tasks
+  for each row execute function public.notify_task_completed();
