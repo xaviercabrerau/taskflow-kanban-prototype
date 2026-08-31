@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import {
   DndContext,
   DragEndEvent,
@@ -67,6 +68,23 @@ export default function Board() {
     const col = state.columns.find((c) => c.taskIds.includes(task.id));
     setModal({ mode: "edit", task, columnId: col?.id });
   }, [state.columns]);
+
+  // Deep link (?task=<id>), used by the "Ver tarea completa" link in
+  // forward-by-email and future notification emails — there's no dedicated
+  // task route in this app (tasks only ever open as a modal over the
+  // board), so this is the mechanism for "open this specific task" links.
+  // Runs once state.tasks is populated; strips the param afterwards so a
+  // refresh/back-navigation doesn't keep re-opening the same modal.
+  const searchParams = useSearchParams();
+  const router = useRouter();
+  useEffect(() => {
+    const taskId = searchParams.get("task");
+    if (!taskId) return;
+    const task = state.tasks[taskId];
+    if (!task) return;
+    handleOpenTask(task);
+    router.replace("/");
+  }, [searchParams, state.tasks, handleOpenTask, router]);
 
   const handleAddTask = useCallback((columnId: string) => {
     setModal({ mode: "create", columnId });

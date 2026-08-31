@@ -74,23 +74,23 @@ describe('Email Utilities', () => {
   describe('taskUrl', () => {
     it('should construct correct URL with default baseUrl', () => {
       const result = taskUrl('task-123', 'org-456');
-      expect(result).toMatch(/\d+\.\d+\.\d+:\d+|localhost|http:\/\/.*\/orgs\/org-456\/tasks\/task-123/);
+      expect(result).toMatch(/\d+\.\d+\.\d+:\d+|localhost|http:\/\/.*\/\?task=task-123/);
     });
 
     it('should construct correct URL with custom baseUrl', () => {
       const result = taskUrl('task-123', 'org-456', 'https://app.example.com');
-      expect(result).toBe('https://app.example.com/orgs/org-456/tasks/task-123');
+      expect(result).toBe('https://app.example.com/?task=task-123');
     });
 
-    it('should match URL pattern /orgs/{orgId}/tasks/{taskId}', () => {
+    it('should match URL pattern /?task={taskId}', () => {
       const result = taskUrl('task-abc-123', 'org-xyz-789');
-      expect(result).toMatch(/\/orgs\/org-xyz-789\/tasks\/task-abc-123$/);
+      expect(result).toMatch(/\/\?task=task-abc-123$/);
     });
 
     it('should handle baseUrl with trailing slash', () => {
       const result = taskUrl('task-123', 'org-456', 'https://app.example.com/');
       expect(result).toContain('https://app.example.com/');
-      expect(result).toContain('/orgs/org-456/tasks/task-123');
+      expect(result).toContain('?task=task-123');
     });
 
     it('should handle various UUID formats', () => {
@@ -101,7 +101,7 @@ describe('Email Utilities', () => {
 
       uuids.forEach(({ taskId, orgId }) => {
         const result = taskUrl(taskId, orgId);
-        expect(result).toContain(`/orgs/${orgId}/tasks/${taskId}`);
+        expect(result).toContain(`/?task=${taskId}`);
       });
     });
   });
@@ -282,7 +282,7 @@ describe('Email Utilities', () => {
       const formattedDate = formatDate('2026-08-17', 'short');
       const taskLink = taskUrl('task-id', 'org-id', 'https://app.example.com');
       expect(formattedDate).toBeTruthy();
-      expect(taskLink).toContain('/orgs/org-id/tasks/task-id');
+      expect(taskLink).toContain('/?task=task-id');
     });
 
     it('should convert complex HTML to plain text with links and entities', () => {

@@ -44,15 +44,20 @@ export function formatDate(
  * @param baseUrl - Base application URL (defaults to NEXT_PUBLIC_APP_URL or localhost:3000)
  * @returns Complete URL to the task
  * @example
- * taskUrl('task-123', 'org-456') // "http://localhost:3000/orgs/org-456/tasks/task-123"
+ * taskUrl('task-123', 'org-456') // "http://localhost:3000/?task=task-123"
  */
 export function taskUrl(
   taskId: string,
+  // Kept for call-site compatibility (both callers pass it) and in case a
+  // future multi-org-per-user UI needs it to route to the right org first;
+  // unused today since tasks only ever open as a modal over the single
+  // board a session is in (no dedicated per-org route exists).
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   organizationId: string,
   baseUrl?: string
 ): string {
   const url = baseUrl || process.env.NEXT_PUBLIC_APP_URL || 'http://localhost:3000';
-  return `${url}/orgs/${organizationId}/tasks/${taskId}`;
+  return `${url}/?task=${taskId}`;
 }
 
 /**
