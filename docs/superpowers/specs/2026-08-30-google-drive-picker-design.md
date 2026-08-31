@@ -6,7 +6,7 @@ Adjuntar un archivo de Drive a una tarea hoy requiere que el usuario copie manua
 
 ## Alcance
 
-Agregar el selector nativo de Google (Picker API) como una segunda forma de adjuntar, sin quitar la opción de pegar el link (sigue funcionando, útil si alguien prefiere copiar/pegar o si el picker falla). Fuera de alcance: subir archivos nuevos desde el picker (solo seleccionar existentes), selección múltiple, cualquier cambio a cómo se sirven/descargan los adjuntos ya guardados.
+Agregar el selector nativo de Google (Picker API) como una segunda forma de adjuntar, sin quitar la opción de pegar el link (sigue funcionando, útil si alguien prefiere copiar/pegar o si el picker falla). El picker permite **seleccionar varios archivos a la vez** en una sola apertura. Fuera de alcance: subir archivos nuevos desde el picker (solo seleccionar existentes), cualquier cambio a cómo se sirven/descargan los adjuntos ya guardados.
 
 ## Por qué se necesita infraestructura nueva
 
@@ -37,26 +37,29 @@ Carga perezosa (solo cuando el usuario hace clic, no en cada carga de página) d
 Expone una única función:
 
 ```ts
-export async function openDrivePicker(): Promise<{ fileId: string } | null>
+export async function openDrivePicker(): Promise<{ fileIds: string[] } | null>
 ```
 
 Internamente:
 1. Carga los dos scripts si no están ya cargados (idempotente).
 2. Pide un access token efímero vía `initTokenClient({ client_id: NEXT_PUBLIC_GOOGLE_CLIENT_ID, scope: 'https://www.googleapis.com/auth/drive.readonly', callback })` + `.requestAccessToken()`. La primera vez en una sesión del navegador puede mostrar un consentimiento de Google; luego lo recuerda.
-3. Con el token, abre `new google.picker.PickerBuilder().addView(new google.picker.DocsView()).setOAuthToken(token).setDeveloperKey(NEXT_PUBLIC_GOOGLE_PICKER_API_KEY).setCallback(cb).build().setVisible(true)`.
-4. Resuelve `{ fileId }` si el usuario selecciona un archivo, o `null` si cancela (cancelar no es un error).
+3. Con el token, abre `new google.picker.PickerBuilder().addView(new google.picker.DocsView()).enableFeature(google.picker.Feature.MULTISELECT_ENABLED).setOAuthToken(token).setDeveloperKey(NEXT_PUBLIC_GOOGLE_PICKER_API_KEY).setCallback(cb).build().setVisible(true)` — `MULTISELECT_ENABLED` es lo que habilita elegir varios archivos con Cmd/Ctrl+clic o checkboxes en la misma apertura del picker.
+4. Resuelve `{ fileIds: string[] }` (uno o más ids) si el usuario selecciona y confirma, o `null` si cancela (cancelar no es un error).
 
 ### 4. Cambio en `TaskModal.tsx`
 
 Junto al input de "pegar link" ya existente (sección "Adjuntos"), un botón nuevo **"📁 Elegir de Google Drive"**, visible solo si `googleConnected` (mismo gate que "Reenviar por email"). Al hacer clic:
 1. Llama `openDrivePicker()`.
-2. Si devuelve `{ fileId }`, hace `POST /api/tasks/[id]/drive-attachment` con `{ fileId }` (en vez de `{ shareLink }`).
+2. Si devuelve `{ fileIds }` (uno o varios), hace un único `POST /api/tasks/[id]/drive-attachment` con `{ fileIds }` (en vez de `{ shareLink }`).
 3. Si devuelve `null` (cancelado), no hace nada — sin mensaje de error.
-4. Si el token request o el POST fallan por una razón real, muestra el error existente (`attachmentsError`).
+4. La respuesta puede traer éxito parcial (ver sección 5) — los adjuntos exitosos se agregan a la lista igual que hoy; si algún archivo falló, se muestra un mensaje con cuántos fallaron sin descartar los que sí se adjuntaron.
 
 ### 5. Cambio en `POST /api/tasks/[id]/drive-attachment`
 
-El body pasa a aceptar `{ shareLink: string } | { fileId: string }`. Si viene `fileId`, se usa directo. Si viene `shareLink`, sigue el comportamiento actual (`extractDriveFileId`). El resto del endpoint (lookup RLS-scoped de la tarea, `getDriveFileMetadata`, insert en `attachments`) no cambia.
+El body pasa a aceptar `{ shareLink: string } | { fileIds: string[] }`. Si viene `shareLink`, sigue el comportamiento actual (un solo adjunto, `extractDriveFileId`) sin cambios. Si viene `fileIds`, el endpoint:
+1. Hace el lookup RLS-scoped de la tarea **una sola vez** (no por archivo).
+2. Para cada `fileId`, intenta `getDriveFileMetadata` + insert en `attachments` de forma independiente — el fallo de un archivo no cancela los demás.
+3. Responde `{ attachments: Attachment[], errors: { fileId: string; error: string }[] }` — éxito parcial explícito en vez de todo-o-nada, ya que con varios archivos es razonable que uno falle (p. ej. permisos de Drive en ese archivo específico) sin que eso bloquee los demás.
 
 ## Testing
 
@@ -65,5 +68,5 @@ No hay test unitario posible para el módulo del picker (depende de scripts exte
 ## Fuera de alcance (explícito)
 
 - Subir archivos nuevos desde el picker.
-- Selección múltiple de archivos.
 - Cualquier cambio al flujo de "pegar link" ya existente, salvo dejarlo intacto como alternativa.
+- Reintentar automáticamente los archivos que fallaron en un lote — el usuario los vuelve a seleccionar si quiere reintentar.
