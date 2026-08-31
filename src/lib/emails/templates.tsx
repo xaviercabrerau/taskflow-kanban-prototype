@@ -278,7 +278,6 @@ export const DueSoonTemplate = (props: TemplateProps) => {
         <Section
           style={{
             backgroundColor: '#FEF3C7',
-            borderLeft: `4px solid ${colors.warning}`,
             padding: '12px 16px',
             marginBottom: '20px',
             borderRadius: '4px',
@@ -369,7 +368,6 @@ export const CommentAddedTemplate = (props: TemplateProps) => {
         <Section
           style={{
             backgroundColor: '#f9fafb',
-            borderLeft: `4px solid ${colors.primary}`,
             padding: '16px',
             marginBottom: '20px',
             borderRadius: '4px',
@@ -671,6 +669,96 @@ export const TaskCompletedTemplate = (props: TemplateProps) => (
       >
         View the task to see completion details and celebrate the team&apos;s progress.
       </Text>
+    </Section>
+  </TaskNotificationLayout>
+);
+
+// ============================================================================
+// ForwardTaskTemplate
+// ============================================================================
+
+const priorityBadgeColors: Record<string, string> = {
+  urgent: colors.danger,
+  high: colors.danger,
+  medium: colors.warning,
+  low: colors.gray,
+};
+
+export interface ForwardTaskTemplateProps {
+  taskTitle: string;
+  taskDescription: string | null;
+  priorityLabel: string;
+  priorityKey: string;
+  dueDateText: string;
+  note?: string;
+  taskUrl: string;
+}
+
+/**
+ * ForwardTaskTemplate
+ * Email sent when a user forwards a task to an external recipient (not a
+ * TaskFlow user) via their connected Gmail — the "Reenviar por email"
+ * feature. Spanish copy, matching that feature's UI (unlike the other
+ * templates above, which are the English-language automated notifications).
+ */
+export const ForwardTaskTemplate = (props: ForwardTaskTemplateProps) => (
+  <TaskNotificationLayout
+    subject={sanitizeForEmail(props.taskTitle)}
+    taskTitle={props.taskTitle}
+    taskUrl={props.taskUrl}
+  >
+    <Section style={{ marginBottom: '20px' }}>
+      <Section
+        style={{
+          display: 'inline-block',
+          backgroundColor: priorityBadgeColors[props.priorityKey] || colors.gray,
+          color: '#ffffff',
+          padding: '4px 12px',
+          marginBottom: '16px',
+          borderRadius: '999px',
+        }}
+      >
+        <Text style={{ margin: '0', fontSize: '12px', fontWeight: '600', color: '#ffffff' }}>
+          {sanitizeForEmail(props.priorityLabel)}
+        </Text>
+      </Section>
+
+      <Text style={{ margin: '0 0 16px 0', fontSize: '15px', color: '#374151', lineHeight: '1.6' }}>
+        {props.taskDescription
+          ? sanitizeForEmail(props.taskDescription)
+          : '(sin descripción)'}
+      </Text>
+
+      <Text style={{ margin: '0 0 4px 0', fontSize: '13px', color: '#6b7280' }}>
+        <strong>Vencimiento:</strong> {sanitizeForEmail(props.dueDateText)}
+      </Text>
+
+      {props.note && (
+        <Section
+          style={{
+            backgroundColor: '#f9fafb',
+            padding: '12px 16px',
+            marginTop: '16px',
+            borderRadius: '4px',
+          }}
+        >
+          <Text
+            style={{
+              margin: '0 0 4px 0',
+              fontSize: '11px',
+              fontWeight: '600',
+              color: '#9ca3af',
+              textTransform: 'uppercase',
+              letterSpacing: '0.05em',
+            }}
+          >
+            Nota
+          </Text>
+          <Text style={{ margin: '0', fontSize: '14px', color: '#374151', lineHeight: '1.5' }}>
+            {sanitizeForEmail(props.note)}
+          </Text>
+        </Section>
+      )}
     </Section>
   </TaskNotificationLayout>
 );
