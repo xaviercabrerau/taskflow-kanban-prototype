@@ -32,21 +32,10 @@ export interface DriveFileMetadata {
   sizeBytes: number | null;
 }
 
-/**
- * Looks up a Drive file's metadata using the org's connected Google account.
- * Throws (rather than silently returning null) on failure — unlike Calendar
- * sync, this always runs in direct response to a user action ("Adjuntar
- * desde Drive"), so the caller needs a real error to show them.
- */
-export async function getDriveFileMetadata(
-  tenantId: string,
+async function fetchDriveFileMetadataWithToken(
+  accessToken: string,
   fileId: string
 ): Promise<DriveFileMetadata> {
-  const accessToken = await getGoogleAccessToken(tenantId);
-  if (!accessToken) {
-    throw new Error("Google Drive no está conectado para esta organización.");
-  }
-
   const params = new URLSearchParams({
     fields: "id,name,mimeType,webViewLink,iconLink,size",
   });
@@ -81,4 +70,53 @@ export async function getDriveFileMetadata(
     iconLink: data.iconLink ?? null,
     sizeBytes: data.size ? Number(data.size) : null,
   };
+}
+
+/**
+ * Looks up a Drive file's metadata using the org's connected Google account.
+ * Throws (rather than silently returning null) on failure — unlike Calendar
+ * sync, this always runs in direct response to a user action ("Adjuntar
+ * desde Drive"), so the caller needs a real error to show them.
+ */
+export async function getDriveFileMetadata(
+  tenantId: string,
+  fileId: string
+): Promise<DriveFileMetadata> {
+  const accessToken = await getGoogleAccessToken(tenantId);
+  if (!accessToken) {
+    throw new Error("Google Drive no está conectado para esta organización.");
+  }
+  return fetchDriveFileMetadataWithToken(accessToken, fileId);
+}
+
+/**
+ * Looks up metadata for several Drive files in one call, fetching the org's
+ * Google access token only once (not once per file — this is the direct
+ * consumer of a multi-select Picker result, where "once per file" would
+ * mean N token refreshes for one user action). Each file's lookup fails
+ * independently: one bad/inaccessible file among several selected doesn't
+ * prevent the others from succeeding.
+ */
+export async function getDriveFilesMetadata(
+  tenantId: string,
+  fileIds: string[]
+): Promise<Array<{ fileId: string; metadata: DriveFileMetadata } | { fileId: string; error: string }>> {
+  const accessToken = await getGoogleAccessToken(tenantId);
+  if (!accessToken) {
+    return fileIds.map((fileId) => ({
+      fileId,
+      error: "Google Drive no está conectado para esta organización.",
+    }));
+  }
+
+  return Promise.all(
+    fileIds.map(async (fileId) => {
+      try {
+        const metadata = await fetchDriveFileMetadataWithToken(accessToken, fileId);
+        return { fileId, metadata };
+      } catch (err) {
+        return { fileId, error: err instanceof Error ? err.message : String(err) };
+      }
+    })
+  );
 }
