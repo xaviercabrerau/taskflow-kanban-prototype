@@ -1,14 +1,17 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
-import { extractDriveFileId, getDriveFileMetadata } from "@/lib/google/drive";
+import { extractDriveFileId, getDriveFileMetadata, getDriveFilesMetadata } from "@/lib/google/drive";
+import type { Database } from "@/lib/supabase/database.types";
+
+type AttachmentRow = Database["public"]["Tables"]["attachments"]["Row"];
 
 /**
  * POST /api/tasks/[id]/drive-attachment
- * Body: { shareLink: string }
- * Attaches a Google Drive file to a task by its share link. Runs
- * server-side (not a direct client → Supabase call like most mutations in
- * this app) because it needs the org's Google access token, which never
- * reaches the browser.
+ * Body: { shareLink: string } (single file, paste-a-link flow) or
+ *       { fileIds: string[] } (one or more files, from the Drive Picker).
+ * Attaches Google Drive file(s) to a task. Runs server-side (not a direct
+ * client → Supabase call like most mutations in this app) because it needs
+ * the org's Google access token, which never reaches the browser.
  */
 export async function POST(
   request: NextRequest,
@@ -22,21 +25,17 @@ export async function POST(
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  let body: { shareLink?: string };
+  let body: { shareLink?: string; fileIds?: string[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
   }
 
-  const shareLink = body.shareLink?.trim();
-  if (!shareLink) {
-    return NextResponse.json({ error: "shareLink es requerido" }, { status: 400 });
-  }
-
   // RLS-scoped select: only succeeds if the caller is a member of the
   // task's organization — same authorization boundary every other
-  // task-related read/write in this app relies on.
+  // task-related read/write in this app relies on. Done once, shared by
+  // both request shapes below.
   const { data: task, error: taskError } = await supabase
     .from("tasks")
     .select("tenant_id")
@@ -45,6 +44,52 @@ export async function POST(
 
   if (taskError || !task) {
     return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+  }
+
+  if (Array.isArray(body.fileIds)) {
+    const fileIds = body.fileIds.filter((id): id is string => typeof id === "string" && id.length > 0);
+    if (fileIds.length === 0) {
+      return NextResponse.json({ error: "fileIds no puede estar vacío" }, { status: 400 });
+    }
+
+    const results = await getDriveFilesMetadata(task.tenant_id, fileIds);
+    const attachments: AttachmentRow[] = [];
+    const errors: { fileId: string; error: string }[] = [];
+
+    for (const result of results) {
+      if ("error" in result) {
+        errors.push({ fileId: result.fileId, error: result.error });
+        continue;
+      }
+      const { metadata } = result;
+      const { data: attachment, error: insertError } = await supabase
+        .from("attachments")
+        .insert({
+          task_id: taskId,
+          file_name: metadata.name,
+          file_url: metadata.id,
+          external_url: metadata.webViewLink,
+          mime_type: metadata.mimeType,
+          file_size_bytes: metadata.sizeBytes,
+          uploaded_by: authData.user.id,
+          source: "google_drive",
+        })
+        .select("*")
+        .single();
+
+      if (insertError || !attachment) {
+        errors.push({ fileId: result.fileId, error: insertError?.message ?? "No se pudo guardar el adjunto." });
+        continue;
+      }
+      attachments.push(attachment);
+    }
+
+    return NextResponse.json({ attachments, errors });
+  }
+
+  const shareLink = body.shareLink?.trim();
+  if (!shareLink) {
+    return NextResponse.json({ error: "shareLink es requerido" }, { status: 400 });
   }
 
   const fileId = extractDriveFileId(shareLink);
