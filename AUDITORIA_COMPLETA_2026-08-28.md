@@ -137,3 +137,60 @@ Tras ambos fixes, se probó de nuevo insertando una mención real y se revisaron
 4. Tests para `notifications-repo.ts`, `nextPosition`, y la lógica de condición de carrera de `BoardContext` (cobertura, previene regresiones del mismo tipo que ya ocurrieron).
 5. Panel de notificaciones y contraste de chips de prioridad (accesibilidad, alto impacto, esfuerzo moderado).
 6. Documentar la convención "efectos secundarios van en triggers/servidor, no en el cliente" antes de conectar los 6 tipos de evento de notificación restantes.
+
+---
+---
+
+# Actualización — Auditoría de seguridad, infraestructura y esquema
+
+**Fecha:** 2026-08-30 / 2026-08-31
+**Alcance:** producción (`https://task.conto.ec`, Supabase `txdyijyswpsalqnwfopc`) — seguridad de código, seguridad de base de datos (RLS/advisors en vivo), infraestructura de despliegue (Vercel/DNS/env vars/cron), y esquema.
+**Método:** 4 agentes especializados en paralelo (seguridad, calidad de código, base de datos, infraestructura/devops) + verificación en vivo directa (Supabase `get_advisors`, `vercel inspect`, `curl` contra producción) para cada hallazgo antes de reportarlo.
+
+**Contexto ya cubierto en la misma sesión, antes de esta auditoría:** un bug real de producción (`mcp_list_tasks` con columna `id` ambigua — RETURNS TABLE colisionaba con un nombre de columna real, rompiendo esa herramienta de MCP en el 100% de las llamadas) fue descubierto probando en vivo un token MCP real, diagnosticado, corregido (migración `20260830210000`) y re-verificado en vivo.
+
+## 🔴 Hallazgos corregidos durante esta auditoría (ya en producción)
+
+1. **`forward-email` sin rate limiting (Importante).** Cualquier miembro autenticado de la org podía llamar este endpoint repetidamente para enviar correos arbitrarios desde el Gmail conectado de la org — riesgo real de que Google marque/limite la cuenta de la org por abuso. **Fix:** ahora usa el mismo limitador (Upstash) que ya protegía `/api/mcp`, con clave por usuario (`forward-email:{userId}`).
+2. **`drive-attachment` sin rate limiting, y sin límite de tamaño en el batch de `fileIds` (Importante).** El endpoint podía recibir un array de cualquier tamaño, disparando un `Promise.all` sin límite de llamadas a la API de Drive más un insert por archivo. **Fix:** mismo rate limiting por usuario, más un tope explícito de 25 archivos por request (acorde al uso real del selector múltiple de Drive).
+3. Ambos fixes verificados: `tsc --noEmit` limpio, `npm run build` limpio, **199/199 tests pasan**, commit `813a35f`, empujado a `origin/main` y desplegado a producción (`vercel deploy --prod`), `curl https://task.conto.ec/api/health` confirma `200 {"status":"ok"}` post-deploy.
+
+## 🗄️ Base de datos — hallazgo de más alto valor: la clase de bug de `mcp_list_tasks` no se repite
+
+Se inventariaron **todas** las funciones `RETURNS TABLE` del esquema (13 en migraciones) buscando específicamente la misma colisión (un nombre de parámetro OUT que choca con una columna real referenciada sin calificar dentro de la misma función). **Confirmado: ninguna otra función tiene este bug.** `mcp_list_tasks` ya está corregida y re-verificada en vivo. Recomendación de proceso (Menor, no bloqueante): agregar un checklist de revisión que marque esta clase de bug en cualquier función `plpgsql` nueva con `RETURNS TABLE`.
+
+### Hallazgos en vivo vía Supabase Advisors (ejecutado directamente, no solo análisis estático)
+
+- **Auth (Importante):** protección contra contraseñas filtradas (HaveIBeenPwned) está **deshabilitada** — activar en Supabase Auth settings.
+- **RLS sin política (Menor):** `failed_jobs` y `template_installs` tienen RLS habilitado pero **sin ninguna política** — en la práctica esto las bloquea por completo salvo acceso `service_role`, lo cual puede ser intencional (son tablas internas), pero vale confirmarlo explícitamente en vez de dejarlo implícito.
+- **Funciones `SECURITY DEFINER` invocables por `anon`/`authenticated` (Informativo, ya revisado):** ~25 funciones (`mcp_*`, `create_inbound_webhook`, `ingest_webhook_task`, `has_permission*`, etc.) aparecen en el linter como "cualquiera puede invocarlas". Todas están diseñadas así a propósito — validan su propio token/secreto internamente (MCP PAT, secreto de webhook) en vez de depender de la sesión de Postgres — no son un hallazgo nuevo, solo ruido esperado del linter para este patrón de arquitectura.
+- **Rendimiento (Menor, no urgente):** 4 foreign keys sin índice de cobertura (`email_threads.user_id`, `notification_preferences.organization_id`, `notifications.actor_id`, `template_installs.user_id`); ~30 índices sin uso registrado (candidatos a revisión, no necesariamente a eliminar — el tráfico real aún es bajo); una política RLS en `profiles` que re-evalúa `auth.<function>()` por fila en vez de usar `(select auth.<function>())`.
+
+## 🚀 Infraestructura y despliegue
+
+### Confirmado sano (verificado en vivo, no solo "está configurado")
+- El despliegue automático GitHub→Vercel **sí funciona** — se correlacionaron timestamps de commits vs. despliegues (diferencia de 4-10 segundos). El drift que existía durante esta sesión era simplemente **10 commits locales sin `git push`**, no una falla del pipeline — ya resuelto (push + `vercel deploy --prod` verificado, `task.conto.ec` sirve el código actual).
+- `Root Directory` de Vercel confirmado en `.` (el bug que rompió despliegues 10+ días está genuinamente resuelto).
+- DNS/alias de `task.conto.ec` correcto, headers de seguridad y CSP con nonce por request confirmados vía `curl -I` en vivo.
+- Rate limiting (Upstash) genuinamente conectado — no solo declarado en código.
+- **Los 4 cron jobs de Postgres (pg_cron) confirmados corriendo y exitosos en vivo** vía `/api/health/cron`: `taskflow_check_due_soon_tasks`, `taskflow_execute_due_date_automations`, `purge-expired-audit-logs`, `record-daily-metrics-snapshots` — todos `succeeded`, ninguno `stale`.
+- Sin banderas riesgosas en `next.config.ts` (sin `ignoreBuildErrors`, sin `images.unoptimized`, sin CORS permisivo).
+
+### Pendiente de acción (requiere decisión/credencial del usuario, no código)
+1. **(Importante) Sentry configurado en código pero inactivo en producción** — `NEXT_PUBLIC_SENTRY_DSN`/`SENTRY_DSN` no están seteados en Vercel. Hoy, cero errores llegan a Sentry pese a que `instrumentation.ts` está correctamente conectado. Acción: crear un proyecto en Sentry y setear ambos DSN en producción.
+2. **(Importante) El cron diario de alertas (`/api/cron/alert-check`, 08:00) no tiene a quién avisar** — `ALERT_WEBHOOK_URL` no está seteado, así que un fallo de salud solo genera un `console.error` que nadie ve. Acción: crear un webhook de Slack/Discord y setear la variable.
+3. **(Importante) Variables del Google Drive Picker aún no están en producción** — `NEXT_PUBLIC_GOOGLE_CLIENT_ID` y `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`. El código ya está desplegado (recién empujado); hasta que se configuren, el botón "Elegir de Google Drive" fallará con un error claro al hacer clic (el flujo de pegar un link de Drive sigue funcionando normalmente mientras tanto — no es una regresión, es una función nueva a medio activar). Pendiente: habilitar Picker API + crear API key restringida por referrer en Google Cloud Console (pasos 6-10 del plan `docs/superpowers/plans/2026-08-30-google-drive-picker.md`).
+4. **(Menor) `NOTIFICATION_FROM_EMAIL` no está seteada** — cae en el dominio compartido de pruebas de Resend (`onboarding@resend.dev`), pensado solo para testing. Acción: verificar un dominio propio en Resend y setear la variable.
+5. **(Menor) `NEXT_PUBLIC_SITE_URL` está seteada en Vercel pero no la usa ningún código** (el código real usa `NEXT_PUBLIC_APP_URL`) — candidata a limpieza.
+
+## 🔒 Deuda de seguridad ya conocida, aún sin resolver
+
+- **`ForwardTaskTemplate`** (correo HTML con marca TaskFlow) sigue sin conectarse — `forward-email` todavía envía solo texto plano. Decisión pendiente: terminar de conectarlo o eliminar el código muerto.
+- `.env.example` no documenta las nuevas variables `NEXT_PUBLIC_GOOGLE_CLIENT_ID`/`NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`.
+
+## Resumen ejecutivo de esta actualización
+
+- **Críticos:** ninguno.
+- **Importantes corregidos hoy:** rate limiting + límite de batch en `drive-attachment`/`forward-email` (código, ya en producción); drift de despliegue de 10 commits (ya empujado y desplegado).
+- **Importantes pendientes de configuración (no código):** activar Sentry, activar `ALERT_WEBHOOK_URL`, completar la config de Google Cloud para el Drive Picker.
+- **Confirmado sano:** ningún otro bug de columna ambigua en `RETURNS TABLE`; ningún secreto expuesto al cliente; el deep-link `?task=` no filtra tareas entre organizaciones; el pipeline de despliegue automático funciona correctamente; los 4 cron jobs de Postgres corren exitosamente.
