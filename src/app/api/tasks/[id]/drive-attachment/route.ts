@@ -34,19 +34,21 @@ export async function POST(
 
   // RLS-scoped select: only succeeds if the caller is a member of the
   // task's organization — same authorization boundary every other
-  // task-related read/write in this app relies on. Done once, shared by
-  // both request shapes below.
-  const { data: task, error: taskError } = await supabase
-    .from("tasks")
-    .select("tenant_id")
-    .eq("id", taskId)
-    .maybeSingle();
-
-  if (taskError || !task) {
-    return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
-  }
-
+  // task-related read/write in this app relies on. Each branch below
+  // does its own lookup (rather than one shared call site) because the
+  // shareLink branch must preserve its original validation order:
+  // shareLink presence check BEFORE the task lookup.
   if (Array.isArray(body.fileIds)) {
+    const { data: task, error: taskError } = await supabase
+      .from("tasks")
+      .select("tenant_id")
+      .eq("id", taskId)
+      .maybeSingle();
+
+    if (taskError || !task) {
+      return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
+    }
+
     const fileIds = body.fileIds.filter((id): id is string => typeof id === "string" && id.length > 0);
     if (fileIds.length === 0) {
       return NextResponse.json({ error: "fileIds no puede estar vacío" }, { status: 400 });
@@ -90,6 +92,16 @@ export async function POST(
   const shareLink = body.shareLink?.trim();
   if (!shareLink) {
     return NextResponse.json({ error: "shareLink es requerido" }, { status: 400 });
+  }
+
+  const { data: task, error: taskError } = await supabase
+    .from("tasks")
+    .select("tenant_id")
+    .eq("id", taskId)
+    .maybeSingle();
+
+  if (taskError || !task) {
+    return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
   }
 
   const fileId = extractDriveFileId(shareLink);
