@@ -17,6 +17,10 @@ export interface SendViaGmailInput {
   to: string;
   subject: string;
   bodyText: string;
+  /** Optional HTML alternative — sent as multipart/alternative alongside
+   * bodyText when provided, per standard email-client-compatibility practice
+   * (some clients render HTML, some fall back to plain text). */
+  bodyHtml?: string;
 }
 
 function base64UrlEncode(input: string): string {
@@ -47,13 +51,35 @@ export async function sendViaGmail(input: SendViaGmailInput): Promise<void> {
   const safeTo = input.to.replace(/[\r\n]/g, "");
   const safeSubject = input.subject.replace(/[\r\n]/g, " ");
 
-  const rawMessage = [
-    `To: ${safeTo}`,
-    `Subject: ${safeSubject}`,
-    "Content-Type: text/plain; charset=utf-8",
-    "",
-    input.bodyText,
-  ].join("\r\n");
+  let rawMessage: string;
+  if (input.bodyHtml) {
+    const boundary = `taskflow_${Math.random().toString(36).slice(2)}`;
+    rawMessage = [
+      `To: ${safeTo}`,
+      `Subject: ${safeSubject}`,
+      `Content-Type: multipart/alternative; boundary="${boundary}"`,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      input.bodyText,
+      "",
+      `--${boundary}`,
+      "Content-Type: text/html; charset=utf-8",
+      "",
+      input.bodyHtml,
+      "",
+      `--${boundary}--`,
+    ].join("\r\n");
+  } else {
+    rawMessage = [
+      `To: ${safeTo}`,
+      `Subject: ${safeSubject}`,
+      "Content-Type: text/plain; charset=utf-8",
+      "",
+      input.bodyText,
+    ].join("\r\n");
+  }
 
   const res = await fetch(GMAIL_SEND_API, {
     method: "POST",
