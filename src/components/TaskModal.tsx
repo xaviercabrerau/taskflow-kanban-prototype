@@ -15,6 +15,7 @@ import {
 } from "@/lib/supabase/attachments-repo";
 import { fetchActivity, describeActivity, type TaskActivity } from "@/lib/supabase/activity-repo";
 import type { Database } from "@/lib/supabase/database.types";
+import { openDrivePicker } from "@/lib/google/picker-client";
 import {
   fetchChecklists,
   createChecklist,
@@ -105,6 +106,7 @@ export default function TaskModal({
   const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
   const [driveLink, setDriveLink] = useState("");
   const [attachingDrive, setAttachingDrive] = useState(false);
+  const [pickerAttaching, setPickerAttaching] = useState(false);
   const [attachmentsLoading, setAttachmentsLoading] = useState(Boolean(taskId));
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
@@ -416,6 +418,55 @@ export default function TaskModal({
       setAttachmentsError(err instanceof Error ? err.message : "No se pudo adjuntar el archivo.");
     } finally {
       setAttachingDrive(false);
+    }
+  }
+
+  async function handlePickFromDrive() {
+    if (!taskId || pickerAttaching) return;
+    setPickerAttaching(true);
+    setAttachmentsError(null);
+    try {
+      const picked = await openDrivePicker();
+      if (!picked) return; // cancelled — not an error
+      const res = await fetch(`/api/tasks/${taskId}/drive-attachment`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fileIds: picked.fileIds }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudieron adjuntar los archivos.");
+      }
+      const rows = json.attachments as Database["public"]["Tables"]["attachments"]["Row"][];
+      const errors = json.errors as { fileId: string; error: string }[];
+      if (rows.length > 0) {
+        setAttachments((prev) => [
+          ...rows.map((row) => ({
+            id: row.id,
+            taskId: row.task_id,
+            fileName: row.file_name,
+            storagePath: row.file_url,
+            externalUrl: row.external_url,
+            source: row.source === "google_drive" ? ("google_drive" as const) : ("upload" as const),
+            fileSizeBytes: row.file_size_bytes,
+            mimeType: row.mime_type,
+            uploadedBy: row.uploaded_by,
+            createdAt: row.created_at,
+          })),
+          ...prev,
+        ]);
+      }
+      if (errors.length > 0) {
+        setAttachmentsError(
+          errors.length === picked.fileIds.length
+            ? "No se pudo adjuntar ningún archivo."
+            : `${errors.length} de ${picked.fileIds.length} archivo(s) no se pudieron adjuntar.`
+        );
+      }
+    } catch (err) {
+      setAttachmentsError(err instanceof Error ? err.message : "No se pudieron adjuntar los archivos.");
+    } finally {
+      setPickerAttaching(false);
     }
   }
 
@@ -880,6 +931,17 @@ export default function TaskModal({
                     {attachingDrive ? "Adjuntando…" : "Adjuntar de Drive"}
                   </button>
                 </div>
+                {googleConnected && (
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginTop: 8 }}
+                    onClick={handlePickFromDrive}
+                    disabled={pickerAttaching}
+                  >
+                    {pickerAttaching ? "Abriendo Drive…" : "📁 Elegir de Google Drive"}
+                  </button>
+                )}
                 {attachmentsLoading ? (
                   <p>Cargando adjuntos…</p>
                 ) : attachments.length === 0 ? (
