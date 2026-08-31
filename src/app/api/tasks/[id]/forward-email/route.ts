@@ -1,9 +1,11 @@
+import { render } from "react-email";
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { sendViaGmail } from "@/lib/google/gmail";
 import { taskUrl, formatDate } from "@/lib/emails/utils";
 import { priorityLabel, type Priority } from "@/lib/types";
 import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import { ForwardTaskTemplate } from "@/lib/emails/templates";
 
 // Simple email-shape check: rejects obviously malformed input and any
 // string containing whitespace/newlines, without being a full RFC 5322
@@ -77,13 +79,18 @@ export async function POST(
     return NextResponse.json({ error: "Tarea no encontrada" }, { status: 404 });
   }
 
+  const dueDateText = task.due_date ? formatDate(task.due_date, "long") : "sin fecha";
+
+  // Plain-text body stays the source of truth for the text/plain MIME part
+  // (kept simple, no HTML-rendering dependency needed for it to degrade
+  // gracefully in text-only mail clients).
   const bodyLines = [
     task.title,
     "",
     task.description || "(sin descripción)",
     "",
     `Prioridad: ${priorityLabel(task.priority as Priority)}`,
-    `Vencimiento: ${task.due_date ? formatDate(task.due_date, "long") : "sin fecha"}`,
+    `Vencimiento: ${dueDateText}`,
     "",
   ];
   if (note) {
@@ -91,12 +98,29 @@ export async function POST(
   }
   bodyLines.push(`Ver tarea completa: ${taskUrl(task.id, task.tenant_id)}`);
 
+  // HTML body: same branded template used by every other notification
+  // email (TaskFlow header, priority badge, due date, optional note).
+  // sendViaGmail sends this alongside bodyText as multipart/alternative,
+  // so a client that can't render HTML still gets the plain-text version.
+  const bodyHtml = await render(
+    ForwardTaskTemplate({
+      taskTitle: task.title,
+      taskDescription: task.description,
+      priorityLabel: priorityLabel(task.priority as Priority),
+      priorityKey: task.priority,
+      dueDateText,
+      note: note || undefined,
+      taskUrl: taskUrl(task.id, task.tenant_id),
+    })
+  );
+
   try {
     await sendViaGmail({
       tenantId: task.tenant_id,
       to,
       subject: task.title,
       bodyText: bodyLines.join("\n"),
+      bodyHtml,
     });
     return NextResponse.json({ ok: true });
   } catch (err) {
