@@ -3,6 +3,7 @@ import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { sendViaGmail } from "@/lib/google/gmail";
 import { taskUrl, formatDate } from "@/lib/emails/utils";
 import { priorityLabel, type Priority } from "@/lib/types";
+import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
 
 // Simple email-shape check: rejects obviously malformed input and any
 // string containing whitespace/newlines, without being a full RFC 5322
@@ -26,6 +27,19 @@ export async function POST(
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Sends a real email from the org's connected Gmail account — without a
+  // budget here, any authenticated member could hammer this endpoint to
+  // spam-send from the org's Gmail, risking Google's own spam/throttle
+  // response against the org's account. Keyed per-user, not per-IP (this
+  // route is session-authenticated, not bearer-token like /api/mcp).
+  const rateLimit = await checkRateLimit(deriveRateLimitKey(`forward-email:${authData.user.id}`));
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Has enviado demasiados correos. Intenta de nuevo en unos minutos." },
+      { status: 429 }
+    );
   }
 
   let body: { to?: string; note?: string };

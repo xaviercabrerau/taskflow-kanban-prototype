@@ -2,8 +2,15 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { extractDriveFileId, getDriveFileMetadata, getDriveFilesMetadata } from "@/lib/google/drive";
 import type { Database } from "@/lib/supabase/database.types";
+import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
 
 type AttachmentRow = Database["public"]["Tables"]["attachments"]["Row"];
+
+// Matches the Drive Picker's own multiselect UX (nobody picks hundreds of
+// files in one go) while bounding worst-case fan-out: each id triggers one
+// Drive API metadata call (Promise.all in getDriveFilesMetadata) plus one
+// DB insert, all within a single request.
+const MAX_FILE_IDS_PER_REQUEST = 25;
 
 /**
  * POST /api/tasks/[id]/drive-attachment
@@ -23,6 +30,19 @@ export async function POST(
   const { data: authData, error: authError } = await supabase.auth.getUser();
   if (authError || !authData.user) {
     return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
+  }
+
+  // Each request can fan out into multiple Drive API calls (fileIds branch)
+  // and always makes at least one; without a budget here, a caller could
+  // hammer this endpoint to burn the org's Drive API quota. Keyed per-user,
+  // not per-IP (this route is session-authenticated, not bearer-token like
+  // /api/mcp).
+  const rateLimit = await checkRateLimit(deriveRateLimitKey(`drive-attachment:${authData.user.id}`));
+  if (!rateLimit.success) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta de nuevo en unos minutos." },
+      { status: 429 }
+    );
   }
 
   let body: { shareLink?: string; fileIds?: string[] };
@@ -52,6 +72,12 @@ export async function POST(
     const fileIds = body.fileIds.filter((id): id is string => typeof id === "string" && id.length > 0);
     if (fileIds.length === 0) {
       return NextResponse.json({ error: "fileIds no puede estar vacío" }, { status: 400 });
+    }
+    if (fileIds.length > MAX_FILE_IDS_PER_REQUEST) {
+      return NextResponse.json(
+        { error: `No se pueden adjuntar más de ${MAX_FILE_IDS_PER_REQUEST} archivos a la vez.` },
+        { status: 400 }
+      );
     }
 
     const results = await getDriveFilesMetadata(task.tenant_id, fileIds);
