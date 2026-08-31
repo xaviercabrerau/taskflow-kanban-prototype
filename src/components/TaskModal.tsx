@@ -419,8 +419,7 @@ export default function TaskModal({
     }
   }
 
-  async function handleForwardEmail(e: React.FormEvent) {
-    e.preventDefault();
+  async function handleForwardEmail() {
     const to = forwardTo.trim();
     if (!to || !taskId || forwardingEmail) return;
     setForwardingEmail(true);
@@ -922,18 +921,34 @@ export default function TaskModal({
                       📧 Reenviar por email
                     </button>
                   ) : (
-                    <form onSubmit={handleForwardEmail}>
+                    // Nota: no puede ser un <form> — TaskModal ya está envuelto
+                    // en el <form> principal de guardar tarea (línea ~603), y
+                    // un <form> anidado es HTML inválido: el navegador lo
+                    // descarta y el botón "Enviar" terminaba disparando el
+                    // submit del formulario externo (guardaba y cerraba el
+                    // modal sin llamar a handleForwardEmail).
+                    <div>
                       <div className="comment-input-wrap" style={{ marginTop: 8 }}>
                         <input
+                          id="forward-email-to"
+                          name="forwardEmailTo"
                           type="email"
                           value={forwardTo}
                           onChange={(e) => setForwardTo(e.target.value)}
+                          onKeyDown={(e) => {
+                            if (e.key === "Enter") {
+                              e.preventDefault();
+                              handleForwardEmail();
+                            }
+                          }}
                           placeholder="Email del destinatario"
                           disabled={forwardingEmail}
                           required
                         />
                       </div>
                       <textarea
+                        id="forward-email-note"
+                        name="forwardEmailNote"
                         value={forwardNote}
                         onChange={(e) => setForwardNote(e.target.value)}
                         placeholder="Nota (opcional)"
@@ -943,14 +958,15 @@ export default function TaskModal({
                       />
                       <div style={{ marginTop: 8 }}>
                         <button
-                          type="submit"
+                          type="button"
                           className="btn primary"
+                          onClick={handleForwardEmail}
                           disabled={!forwardTo.trim() || forwardingEmail}
                         >
                           {forwardingEmail ? "Enviando…" : "Enviar"}
                         </button>
                       </div>
-                    </form>
+                    </div>
                   )}
                   {forwardResult && (
                     <p
