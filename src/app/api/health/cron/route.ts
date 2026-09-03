@@ -1,4 +1,5 @@
 import { createClient } from "@supabase/supabase-js";
+import { MONITORED_JOBS } from "@/lib/cron-jobs";
 
 // pg_cron job health check.
 //
@@ -30,17 +31,6 @@ import { createClient } from "@supabase/supabase-js";
 // small, well-scoped read for a credential that can read/write everything.
 // The RPC approach keeps the elevated privilege inside Postgres, scoped to
 // exactly this query.
-
-// Nombres reales de cron.job.jobname (no los nombres de las funciones que
-// invocan) — solo se usan en el fallback de error abajo, pero deben
-// coincidir con lo que get_cron_health() realmente devuelve.
-const MONITORED_JOBS = [
-  { name: "taskflow_check_due_soon_tasks", schedule: "hourly" },
-  { name: "taskflow_execute_due_date_automations", schedule: "hourly" },
-  { name: "taskflow_execute_sla_automations", schedule: "hourly" },
-  { name: "purge-expired-audit-logs", schedule: "daily" },
-  { name: "record-daily-metrics-snapshots", schedule: "daily" },
-] as const;
 
 interface CronHealthRow {
   job_name: string;

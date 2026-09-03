@@ -1,6 +1,7 @@
 import { timingSafeEqual } from "crypto";
 import { createClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/supabase/database.types";
+import { MONITORED_JOBS } from "@/lib/cron-jobs";
 
 // Scheduled alerting endpoint.
 //
@@ -29,17 +30,6 @@ import type { Database } from "@/lib/supabase/database.types";
 // applied) — the data it returns (whether 4 known, non-secret job names are
 // stale) is low-sensitivity, and access to it is already gated one layer up
 // by CRON_SECRET.
-
-// Nombres reales de cron.job.jobname (NO los nombres de las funciones que
-// invocan) — get_cron_health() los devuelve tal cual; si no coinciden acá,
-// esta ruta reporta "no reportó estado" para los 4 jobs en cada corrida.
-const MONITORED_JOBS = [
-  { name: "taskflow_check_due_soon_tasks", schedule: "hourly" },
-  { name: "taskflow_execute_due_date_automations", schedule: "hourly" },
-  { name: "taskflow_execute_sla_automations", schedule: "hourly" },
-  { name: "purge-expired-audit-logs", schedule: "daily" },
-  { name: "record-daily-metrics-snapshots", schedule: "daily" },
-] as const;
 
 interface CronHealthRow {
   job_name: string;
