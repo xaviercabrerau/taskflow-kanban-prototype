@@ -10,12 +10,18 @@ import { getGoogleAccessToken } from "./client";
 
 const CALENDAR_API = "https://www.googleapis.com/calendar/v3/calendars/primary/events";
 
-// Calendar event IDs must be 5-1024 lowercase base32hex chars (RFC 4648
-// section 7) — a raw UUID (has hyphens, is not base32hex) doesn't qualify.
-// Deriving one deterministically from the task ID keeps sync idempotent
-// (same task always maps to the same event) without a mapping table.
+// Calendar event IDs must be 5-1024 lowercase base32hex chars — lowercase
+// letters a-v and digits 0-9 ONLY (RFC 4648 section 7); a raw UUID (has
+// hyphens) doesn't qualify, and neither does a prefix using any letter
+// outside a-v. The original "taskflow" prefix included "w" (outside a-v)
+// and Google rejected every call with "Invalid resource id value." — never
+// caught before because the Calendar API itself was disabled in Google
+// Cloud until now, so this code path had never actually run against a real
+// project. "tflo" avoids every letter past v. Deriving the ID
+// deterministically from the task ID keeps sync idempotent (same task
+// always maps to the same event) without a mapping table.
 function eventIdForTask(taskId: string): string {
-  return `taskflow${taskId.replace(/-/g, "")}`.toLowerCase().slice(0, 1024);
+  return `tflo${taskId.replace(/-/g, "")}`.toLowerCase().slice(0, 1024);
 }
 
 export interface CalendarSyncInput {
@@ -91,11 +97,13 @@ export async function syncTaskDueDate(input: CalendarSyncInput): Promise<void> {
   }
 }
 
-// Separate deterministic-ID namespace ("taskflowmeet...") from the due-date
-// sync event above ("taskflow...") — a task can have both a due-date event
-// and a scheduled-meeting event without colliding.
+// Separate deterministic-ID namespace ("tfmeet...") from the due-date sync
+// event above ("tflo...") — a task can have both a due-date event and a
+// scheduled-meeting event without colliding. Same base32hex constraint as
+// eventIdForTask above (lowercase a-v and 0-9 only) — "tfmeet" stays within
+// that range (unlike the original "taskflowmeet", which had "w").
 function meetEventIdForTask(taskId: string): string {
-  return `taskflowmeet${taskId.replace(/-/g, "")}`.toLowerCase().slice(0, 1024);
+  return `tfmeet${taskId.replace(/-/g, "")}`.toLowerCase().slice(0, 1024);
 }
 
 export interface ScheduleMeetingInput {
