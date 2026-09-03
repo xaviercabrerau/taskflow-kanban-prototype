@@ -1,14 +1,15 @@
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 
-interface OrganizationMemberWithProfile {
+interface OrganizationMemberRow {
   user_id: string;
   org_role: string;
   joined_at: string;
-  profiles: {
-    id: string;
-    email: string | null;
-    full_name: string | null;
-  } | null;
+}
+
+interface ProfileRow {
+  id: string;
+  email: string | null;
+  full_name: string | null;
 }
 
 export async function GET(request: Request) {
@@ -33,35 +34,50 @@ export async function GET(request: Request) {
     return Response.json({ error: "Forbidden" }, { status: 403 });
   }
 
-  const { data: users, error: usersError } = await supabase
+  // Two separate queries instead of a `profiles:user_id(...)` embed: that
+  // embed needs a direct FK from organization_members to profiles for
+  // PostgREST to resolve, but organization_members.user_id references
+  // auth.users (same as profiles.id does) — there is no such direct FK, so
+  // the embed fails with "Could not find a relationship" on every call.
+  const { data: members, error: usersError } = await supabase
     .from("organization_members")
-    .select(
-      `
-      user_id,
-      org_role,
-      joined_at,
-      profiles:user_id(id, email, full_name)
-    `
-    )
+    .select("user_id, org_role, joined_at")
     .eq("organization_id", membership.organization_id);
 
   if (usersError) {
     return Response.json({ error: usersError.message }, { status: 500 });
   }
 
-  const formattedUsers = (users as unknown as OrganizationMemberWithProfile[] | null)?.map((u) => ({
-    id: u.user_id,
-    email: u.profiles?.email || "",
-    name: u.profiles?.full_name || "Unknown",
-    role: u.org_role === "owner" ? "admin" : u.org_role === "admin" ? "admin" : "user",
-    status: "active",
-    lastLogin: null,
-    createdAt: u.joined_at,
-    updatedAt: u.joined_at,
-    assignedClientIds: [],
-  }));
+  const memberRows = (members as OrganizationMemberRow[] | null) ?? [];
+  const userIds = memberRows.map((m) => m.user_id);
 
-  return Response.json({ users: formattedUsers || [] });
+  const { data: profiles, error: profilesError } = await supabase
+    .from("profiles")
+    .select("id, email, full_name")
+    .in("id", userIds.length > 0 ? userIds : ["00000000-0000-0000-0000-000000000000"]);
+
+  if (profilesError) {
+    return Response.json({ error: profilesError.message }, { status: 500 });
+  }
+
+  const profileById = new Map((profiles as ProfileRow[] | null ?? []).map((p) => [p.id, p]));
+
+  const formattedUsers = memberRows.map((u) => {
+    const profile = profileById.get(u.user_id);
+    return {
+      id: u.user_id,
+      email: profile?.email || "",
+      name: profile?.full_name || "Unknown",
+      role: u.org_role === "owner" ? "admin" : u.org_role === "admin" ? "admin" : "user",
+      status: "active",
+      lastLogin: null,
+      createdAt: u.joined_at,
+      updatedAt: u.joined_at,
+      assignedClientIds: [],
+    };
+  });
+
+  return Response.json({ users: formattedUsers });
 }
 
 export async function POST(request: Request) {

@@ -100,9 +100,11 @@ describe('API: /api/admin/users (GET & POST)', () => {
         error: null,
       });
 
-      // The route makes two sequential `.from('organization_members')` calls
-      // with different shapes: the first ends in `.maybeSingle()` (membership
-      // check), the second is awaited directly off `.eq()` (the users list).
+      // The route makes three sequential `.from()` calls: the membership
+      // check ends in `.maybeSingle()`; the members list and the profiles
+      // lookup are each awaited directly off `.eq()`/`.in()` — no embed,
+      // since organization_members.user_id and profiles.id both reference
+      // auth.users independently, with no direct FK between the two tables.
       const membershipChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockReturnThis(),
@@ -111,24 +113,25 @@ describe('API: /api/admin/users (GET & POST)', () => {
           error: null,
         }),
       };
-      const usersListChain = {
+      const membersListChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({
-          data: [
-            {
-              user_id: 'user-123',
-              org_role: 'owner',
-              joined_at: '2026-01-01T00:00:00.000Z',
-              profiles: { id: 'user-123', email: 'ana@example.com', full_name: 'Ana QA' },
-            },
-          ],
+          data: [{ user_id: 'user-123', org_role: 'owner', joined_at: '2026-01-01T00:00:00.000Z' }],
+          error: null,
+        }),
+      };
+      const profilesChain = {
+        select: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValue({
+          data: [{ id: 'user-123', email: 'ana@example.com', full_name: 'Ana QA' }],
           error: null,
         }),
       };
 
       mockSupabase.from
         .mockReturnValueOnce(membershipChain)
-        .mockReturnValueOnce(usersListChain);
+        .mockReturnValueOnce(membersListChain)
+        .mockReturnValueOnce(profilesChain);
 
       mockRequest = new Request('http://localhost:3000/api/admin/users');
 
@@ -149,7 +152,8 @@ describe('API: /api/admin/users (GET & POST)', () => {
           assignedClientIds: [],
         },
       ]);
-      expect(usersListChain.eq).toHaveBeenCalledWith('organization_id', 'org-123');
+      expect(membersListChain.eq).toHaveBeenCalledWith('organization_id', 'org-123');
+      expect(profilesChain.in).toHaveBeenCalledWith('id', ['user-123']);
     });
 
     it('should handle empty user list', async () => {
@@ -166,14 +170,19 @@ describe('API: /api/admin/users (GET & POST)', () => {
           error: null,
         }),
       };
-      const usersListChain = {
+      const membersListChain = {
         select: jest.fn().mockReturnThis(),
         eq: jest.fn().mockResolvedValue({ data: [], error: null }),
+      };
+      const profilesChain = {
+        select: jest.fn().mockReturnThis(),
+        in: jest.fn().mockResolvedValue({ data: [], error: null }),
       };
 
       mockSupabase.from
         .mockReturnValueOnce(membershipChain)
-        .mockReturnValueOnce(usersListChain);
+        .mockReturnValueOnce(membersListChain)
+        .mockReturnValueOnce(profilesChain);
 
       mockRequest = new Request('http://localhost:3000/api/admin/users');
 
@@ -182,6 +191,10 @@ describe('API: /api/admin/users (GET & POST)', () => {
 
       expect(response.status).toBe(200);
       expect(json.users).toEqual([]);
+      // The .in("id", [...]) call must never receive an empty array — an
+      // empty IN () is invalid, so the route substitutes a sentinel UUID
+      // that matches no real row instead.
+      expect(profilesChain.in).toHaveBeenCalledWith('id', ['00000000-0000-0000-0000-000000000000']);
     });
   });
 
