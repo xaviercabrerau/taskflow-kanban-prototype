@@ -22,6 +22,7 @@ import CursorOverlay from "./CursorOverlay";
 import { usePresenceCursors } from "@/hooks/usePresenceCursors";
 import { generateTempId } from "@/lib/tempId";
 import { fetchSavedViews, createSavedView, deleteSavedView, type SavedView } from "@/lib/supabase/saved-views-repo";
+import CommandPalette from "./CommandPalette";
 
 export default function Board() {
   const {
@@ -606,6 +607,10 @@ export default function Board() {
           }}
         />
       )}
+      <CommandPalette
+        onOpenTask={handleOpenTask}
+        onCreateTask={() => setModal({ mode: "create", columnId: state.columns[0]?.id })}
+      />
     </Shell>
   );
 }

@@ -1746,6 +1746,15 @@ export type Database = {
           id: string
         }[]
       }
+      search_workspace: {
+        Args: { p_board_id: string; p_query: string }
+        Returns: {
+          match_type: string
+          snippet: string
+          task_id: string
+          task_title: string
+        }[]
+      }
       session_meets_mfa: { Args: { org_id: string }; Returns: boolean }
       upsert_integration: {
         Args: {
