@@ -314,10 +314,16 @@ export default function Board() {
 
       {modal && state.columns.length > 0 && (
         <TaskModal
+          // Forces a clean remount (fresh internal form state) when a
+          // subtask link inside the modal switches it to a different task
+          // — without this, React reuses the same mounted instance and its
+          // useState(initial?.title ...) values would stay stale.
+          key={modal.task?.id ?? `new-${modal.columnId}`}
           mode={modal.mode}
           initial={modal.task}
           columns={state.columns}
           columnId={modal.columnId ?? state.columns[0].id}
+          onOpenTask={handleOpenTask}
           onClose={() => setModal(null)}
           onSave={(taskData, columnId, id) => {
             if (id) {

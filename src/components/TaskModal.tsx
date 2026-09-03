@@ -34,6 +34,7 @@ import {
   type Tag,
 } from "@/lib/supabase/tags-repo";
 import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
+import { generateTempId } from "@/lib/tempId";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
 
 function formatFileSize(bytes: number | null): string {
@@ -59,6 +60,7 @@ interface TaskModalProps {
   onClose: () => void;
   onSave: (task: Omit<Task, "id">, columnId: string, id?: string) => void;
   onDelete?: (id: string) => void;
+  onOpenTask?: (task: Task) => void;
 }
 
 export default function TaskModal({
@@ -69,8 +71,9 @@ export default function TaskModal({
   onClose,
   onSave,
   onDelete,
+  onOpenTask,
 }: TaskModalProps) {
-  const { can, supabase, userId, tenantId, members, integrations } = useBoard();
+  const { can, supabase, userId, tenantId, members, integrations, state, addTask } = useBoard();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? "medium");
   const [assignee, setAssignee] = useState(initial?.assignee ?? "");
@@ -117,6 +120,8 @@ export default function TaskModal({
   const [forwardNote, setForwardNote] = useState("");
   const [forwardingEmail, setForwardingEmail] = useState(false);
   const [forwardResult, setForwardResult] = useState<{ ok: boolean; message: string } | null>(null);
+
+  const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
   const [meetFormOpen, setMeetFormOpen] = useState(false);
   const [meetDate, setMeetDate] = useState("");
@@ -549,6 +554,26 @@ export default function TaskModal({
     }
   }
 
+  // Subtasks: created as normal tasks with parentTaskId set, in the same
+  // column as their parent. Reuses the same addTask() the "+ Nueva tarea"
+  // flow already uses (fractional positioning, optimistic update) —
+  // subtasks are not a separate data model, just tasks with a parent link.
+  const subtasks = taskId ? Object.values(state.tasks).filter((t) => t.parentTaskId === taskId) : [];
+  const parentTask = initial?.parentTaskId ? state.tasks[initial.parentTaskId] : undefined;
+
+  function handleAddSubtask() {
+    const title = newSubtaskTitle.trim();
+    if (!title || !taskId) return;
+    addTask(selectedColumnId, {
+      id: generateTempId(),
+      title,
+      priority: "medium",
+      assignee: "Sin asignar",
+      parentTaskId: taskId,
+    });
+    setNewSubtaskTitle("");
+  }
+
   async function handleAddChecklist(e: React.FormEvent) {
     e.preventDefault();
     if (!taskId || !newChecklistTitle.trim() || addingChecklist) return;
@@ -863,6 +888,68 @@ export default function TaskModal({
                     </div>
                   </div>
                 ) : null}
+              </div>
+
+              {parentTask && (
+                <p style={{ fontSize: 12.5, color: "var(--muted)" }}>
+                  ↳ Subtarea de:{" "}
+                  <button
+                    type="button"
+                    className="comment-reply-btn"
+                    style={{ display: "inline", margin: 0 }}
+                    onClick={() => onOpenTask?.(parentTask)}
+                  >
+                    {parentTask.title}
+                  </button>
+                </p>
+              )}
+
+              <div className="field task-section">
+                <label>Subtareas</label>
+                {subtasks.length === 0 ? (
+                  <p>Sin subtareas todavía.</p>
+                ) : (
+                  <ul className="attachment-list">
+                    {subtasks.map((sub) => {
+                      const subCol = columns.find((c) => c.taskIds.includes(sub.id));
+                      const done = subCol?.isDoneState ?? false;
+                      return (
+                        <li key={sub.id} className="attachment-item">
+                          <button
+                            type="button"
+                            className="comment-reply-btn"
+                            style={{
+                              margin: 0,
+                              color: done ? "var(--muted)" : "var(--accent)",
+                              textDecoration: done ? "line-through" : undefined,
+                            }}
+                            onClick={() => onOpenTask?.(sub)}
+                          >
+                            {sub.title}
+                          </button>
+                        </li>
+                      );
+                    })}
+                  </ul>
+                )}
+                {taskId && (
+                  <div className="comment-input-wrap">
+                    <input
+                      value={newSubtaskTitle}
+                      onChange={(e) => setNewSubtaskTitle(e.target.value)}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter") {
+                          e.preventDefault();
+                          handleAddSubtask();
+                        }
+                      }}
+                      placeholder="Nueva subtarea"
+                    />
+                    <button type="button" className="btn" onClick={handleAddSubtask} disabled={!newSubtaskTitle.trim()}>
+                      Agregar
+                    </button>
+                  </div>
+                )}
               </div>
 
               <div className="field task-section">

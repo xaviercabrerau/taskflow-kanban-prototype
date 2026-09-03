@@ -29,6 +29,7 @@ function rowToTask(row: TaskRow): Task {
     tag: row.tag ?? undefined,
     startDate: toDateOnly(row.start_date),
     dueDate: toDateOnly(row.due_date),
+    parentTaskId: row.parent_task_id ?? undefined,
   };
 }
 
@@ -90,6 +91,7 @@ export async function insertTask(
       tag: task.tag ?? null,
       start_date: task.startDate ?? null,
       due_date: task.dueDate ?? null,
+      parent_task_id: task.parentTaskId ?? null,
       position,
     })
     .select("id")
@@ -109,6 +111,7 @@ export async function updateTaskFields(supabase: TypedClient, task: Task): Promi
       tag: task.tag ?? null,
       start_date: task.startDate ?? null,
       due_date: task.dueDate ?? null,
+      parent_task_id: task.parentTaskId ?? null,
     })
     .eq("id", task.id);
   if (error) throw error;

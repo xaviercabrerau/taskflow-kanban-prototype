@@ -12,6 +12,7 @@ export interface Task {
   commentCount?: number;
   attachmentCount?: number;
   createdAt?: string; // ISO timestamp, para métricas de antigüedad/cycle time
+  parentTaskId?: string | null; // subtarea de otra tarea; null/undefined = tarea de nivel superior
 }
 
 export function priorityLabel(p: Priority): string {
