@@ -95,7 +95,16 @@ export async function proxy(request: NextRequest) {
     // visitante anónimo debe poder abrirla sin sesión; el propio token en
     // la URL (validado server-side vía resolve_share_link) es la única
     // autorización que necesita, no una cuenta de TaskFlow.
-    request.nextUrl.pathname.startsWith("/share/");
+    request.nextUrl.pathname.startsWith("/share/") ||
+    // Assets estáticos de la PWA (manifest, service worker, íconos): sin
+    // datos sensibles, pero deben quedar alcanzables incluso si el
+    // navegador los solicita sin cookies de sesión (p. ej. el checker de
+    // instalabilidad de Chrome, o un service worker ya registrado
+    // reintentando tras un logout) — de lo contrario el matcher del
+    // middleware los redirige a /login y la PWA deja de instalarse/actualizarse.
+    request.nextUrl.pathname === "/manifest.webmanifest" ||
+    request.nextUrl.pathname === "/sw.js" ||
+    /^\/(icon-192|icon-512|apple-touch-icon)\.png$/.test(request.nextUrl.pathname);
   if (!user && !isPublicAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";
