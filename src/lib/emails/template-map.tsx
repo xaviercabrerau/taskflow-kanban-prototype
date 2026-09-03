@@ -20,7 +20,7 @@ import { sanitizeForEmail } from './utils';
 
 type TemplateComponent = (props: TemplateProps) => React.ReactElement;
 
-const SUBJECTS: Record<EventType, (props: TemplateProps) => string> = {
+export const SUBJECTS: Record<EventType, (props: TemplateProps) => string> = {
   task_assigned: (p) => `${sanitizeForEmail(p.actorName || 'Someone')} assigned you to this task`,
   task_mentioned: (p) => `You were mentioned in: ${sanitizeForEmail(p.taskTitle)}`,
   status_changed: (p) => `${sanitizeForEmail(p.taskTitle)} status changed to ${sanitizeForEmail(p.statusAfter || '')}`,

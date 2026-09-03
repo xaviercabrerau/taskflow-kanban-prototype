@@ -30,7 +30,7 @@ import { createClient } from '@supabase/supabase-js';
 import type { Database } from '../supabase/database.types';
 import type { EventType, Channel, NotificationEvent } from './types';
 import { sendEmail } from '../emails/resend-client';
-import { getEmailContent } from '../emails/template-map';
+import { getEmailContent, SUBJECTS } from '../emails/template-map';
 import { taskUrl as buildTaskUrl } from '../emails/utils';
 import type { TemplateProps } from '../emails/templates';
 
@@ -297,5 +297,64 @@ export async function sendNotification(
     }
   }
 
+  // Best-effort relay to the org's own Slack/Teams incoming webhook (a URL
+  // the org owner pastes into Integraciones — same trust level as
+  // ALERT_WEBHOOK_URL, not attacker-controlled). Not gated by the
+  // per-recipient email/in_app preferences above since it's a team-channel
+  // post, not a personal notification. Known limitation: an event that
+  // notifies several recipients at once (e.g. a comment mentioning
+  // multiple people) currently relays once per recipient, so the channel
+  // can see near-duplicate messages — acceptable for a first version, not
+  // worth a dedupe mechanism yet.
+  try {
+    await sendChatIntegrationRelay(supabase, event);
+  } catch (err) {
+    console.error('Slack/Teams relay failed', { event, error: err instanceof Error ? err.message : String(err) });
+  }
+
   return { processed: true };
+}
+
+async function sendChatIntegrationRelay(supabase: TypedSupabaseClient, event: NotificationEvent): Promise<void> {
+  const { data: integrations } = await supabase
+    .from('integrations')
+    .select('provider, config')
+    .eq('tenant_id', event.organizationId)
+    .eq('is_active', true)
+    .in('provider', ['slack', 'teams']);
+
+  if (!integrations || integrations.length === 0) return;
+
+  const d = event.data;
+  const props: TemplateProps = {
+    recipientName: '',
+    organizationName: (d.organizationName as string) || 'tu organización',
+    taskTitle: (d.taskTitle as string) || '',
+    taskUrl: event.taskId ? buildTaskUrl(event.taskId, event.organizationId) : (d.taskUrl as string) || '#',
+    actorName: d.actorName as string | undefined,
+    dueDate: d.dueDate as string | undefined,
+    statusBefore: d.statusBefore as string | undefined,
+    statusAfter: d.statusAfter as string | undefined,
+    commentText: d.commentText as string | undefined,
+    projectName: d.projectName as string | undefined,
+    customData: d,
+  };
+  const text = SUBJECTS[event.type](props);
+
+  for (const integration of integrations) {
+    const config = (integration.config ?? {}) as Record<string, unknown>;
+    const webhookUrl = typeof config.webhookUrl === 'string' ? config.webhookUrl : null;
+    if (!webhookUrl || !webhookUrl.startsWith('https://')) continue;
+    try {
+      await fetch(webhookUrl, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        // Slack incoming webhooks read `text`; Teams (Office 365 Connector
+        // format) reads `text` too — one payload shape works for both.
+        body: JSON.stringify({ text }),
+      });
+    } catch (err) {
+      console.error(`${integration.provider} relay POST failed`, err);
+    }
+  }
 }
