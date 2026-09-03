@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { fetchShareLinks, createShareLink, type ShareScope, type SharePermission } from "@/lib/supabase/share-links-repo";
 import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import { safeApiError } from "@/lib/api-v1/auth";
 
 /**
  * GET /api/share-links?boardId=...
@@ -24,8 +25,8 @@ export async function GET(request: NextRequest): Promise<NextResponse> {
     const links = await fetchShareLinks(supabase, boardId);
     return NextResponse.json({ links });
   } catch (err) {
-    const message = err instanceof Error ? err.message : String(err);
-    return NextResponse.json({ error: message }, { status: 500 });
+    const message = err instanceof Error ? { message: err.message } : { message: String(err) };
+    return NextResponse.json({ error: safeApiError("share-links-list", message) }, { status: 500 });
   }
 }
 

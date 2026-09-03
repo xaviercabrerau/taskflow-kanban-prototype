@@ -2,6 +2,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import { getGithubToken, fetchGithubIssueOrPr } from "@/lib/github/client";
 import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import { safeApiError } from "@/lib/api-v1/auth";
 
 /**
  * POST /api/tasks/[id]/github-link
@@ -70,7 +71,7 @@ export async function POST(
       .select("*")
       .single();
     if (insertError) {
-      return NextResponse.json({ error: insertError.message }, { status: 500 });
+      return NextResponse.json({ error: safeApiError("github-link", insertError) }, { status: 500 });
     }
     return NextResponse.json({ link }, { status: 201 });
   } catch (err) {
