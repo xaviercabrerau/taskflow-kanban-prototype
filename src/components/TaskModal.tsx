@@ -122,6 +122,7 @@ export default function TaskModal({
   const [meetDate, setMeetDate] = useState("");
   const [meetTime, setMeetTime] = useState("");
   const [meetDuration, setMeetDuration] = useState(30);
+  const [meetExtraEmails, setMeetExtraEmails] = useState("");
   const [scheduling, setScheduling] = useState(false);
   const [meetLink, setMeetLink] = useState<string | null>(null);
   const [meetScheduledAt, setMeetScheduledAt] = useState<string | null>(null);
@@ -525,10 +526,14 @@ export default function TaskModal({
     setMeetError(null);
     try {
       const startTime = new Date(`${meetDate}T${meetTime}`).toISOString();
+      const extraEmails = meetExtraEmails
+        .split(/[,\s]+/)
+        .map((e) => e.trim())
+        .filter(Boolean);
       const res = await fetch(`/api/tasks/${taskId}/schedule-meeting`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startTime, durationMinutes: meetDuration }),
+        body: JSON.stringify({ startTime, durationMinutes: meetDuration, extraEmails }),
       });
       const json = await res.json();
       if (!res.ok) {
@@ -1150,6 +1155,17 @@ export default function TaskModal({
                             <option value={120}>2 horas</option>
                           </select>
                         </div>
+                      </div>
+                      <div className="field">
+                        <label htmlFor="meet-extra-emails">Invitar también a (opcional)</label>
+                        <input
+                          id="meet-extra-emails"
+                          type="text"
+                          value={meetExtraEmails}
+                          onChange={(e) => setMeetExtraEmails(e.target.value)}
+                          placeholder="cliente@empresa.com, otra@empresa.com"
+                          disabled={scheduling}
+                        />
                       </div>
                       <div style={{ display: "flex", gap: 8 }}>
                         <button

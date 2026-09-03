@@ -6,13 +6,21 @@ import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
 
 const MIN_DURATION_MINUTES = 15;
 const MAX_DURATION_MINUTES = 240;
+const MAX_EXTRA_EMAILS = 20;
+
+// Same shape check as forward-email's EMAIL_RE: rejects obviously malformed
+// input and any string containing whitespace/newlines, without being a
+// full RFC 5322 validator.
+const EMAIL_RE = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 
 /**
  * POST /api/tasks/[id]/schedule-meeting
- * Body: { startTime: string (ISO datetime); durationMinutes: number }
+ * Body: { startTime: string (ISO datetime); durationMinutes: number;
+ *         extraEmails?: string[] }
  * Creates (or, on a later call for the same task, updates — idempotent by
  * design) a Google Meet-enabled Calendar event on the org's connected
- * Google account, inviting the caller and the task's assignee(s). Runs
+ * Google account, inviting the caller, the task's assignee(s), and any
+ * `extraEmails` (e.g. an external client) the caller adds manually. Runs
  * server-side because it needs the org's Google access token.
  */
 export async function POST(
@@ -38,11 +46,28 @@ export async function POST(
     );
   }
 
-  let body: { startTime?: string; durationMinutes?: number };
+  let body: { startTime?: string; durationMinutes?: number; extraEmails?: string[] };
   try {
     body = await request.json();
   } catch {
     return NextResponse.json({ error: "Invalid JSON" }, { status: 400 });
+  }
+
+  const rawExtraEmails = Array.isArray(body.extraEmails) ? body.extraEmails : [];
+  if (rawExtraEmails.length > MAX_EXTRA_EMAILS) {
+    return NextResponse.json(
+      { error: `No se pueden invitar más de ${MAX_EXTRA_EMAILS} personas adicionales.` },
+      { status: 400 }
+    );
+  }
+  const extraEmails: string[] = [];
+  for (const raw of rawExtraEmails) {
+    const email = typeof raw === "string" ? raw.trim() : "";
+    if (!email) continue;
+    if (!EMAIL_RE.test(email) || /[\r\n]/.test(email)) {
+      return NextResponse.json({ error: `"${email}" no es un email válido.` }, { status: 400 });
+    }
+    extraEmails.push(email);
   }
 
   const startTime = body.startTime;
@@ -91,7 +116,7 @@ export async function POST(
 
   const attendeeEmails = Array.from(
     new Set(
-      [authData.user.email, ...(profiles ?? []).map((p) => p.email)].filter(
+      [authData.user.email, ...(profiles ?? []).map((p) => p.email), ...extraEmails].filter(
         (email): email is string => Boolean(email)
       )
     )
