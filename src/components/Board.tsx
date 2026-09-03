@@ -21,6 +21,7 @@ import Shell from "./Shell";
 import CursorOverlay from "./CursorOverlay";
 import { usePresenceCursors } from "@/hooks/usePresenceCursors";
 import { generateTempId } from "@/lib/tempId";
+import { fetchSavedViews, createSavedView, deleteSavedView, type SavedView } from "@/lib/supabase/saved-views-repo";
 
 export default function Board() {
   const {
@@ -36,9 +37,17 @@ export default function Board() {
     members,
     can,
     searchQuery,
+    setSearchQuery,
   } = useBoard();
   const [activeId, setActiveId] = useState<string | null>(null);
   const [assigneeFilter, setAssigneeFilter] = useState<string | null>(null);
+  const [priorityFilter, setPriorityFilter] = useState<string | null>(null);
+  const [tagFilter, setTagFilter] = useState<string | null>(null);
+  const [savedViews, setSavedViews] = useState<SavedView[]>([]);
+  const [selectedViewId, setSelectedViewId] = useState<string>("");
+  const [savingView, setSavingView] = useState(false);
+  const [newViewName, setNewViewName] = useState("");
+  const [showSaveViewForm, setShowSaveViewForm] = useState(false);
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
   const [columnError, setColumnError] = useState<string | null>(null);
@@ -99,6 +108,8 @@ export default function Board() {
           .map((id) => state.tasks[id])
           .filter(Boolean)
           .filter((task) => assigneeFilter === null || task.assigneeUserId === assigneeFilter)
+          .filter((task) => priorityFilter === null || task.priority === priorityFilter)
+          .filter((task) => tagFilter === null || task.tag === tagFilter)
           .filter(
             (task) =>
               !searchQuery.trim() ||
@@ -107,7 +118,64 @@ export default function Board() {
       );
     }
     return map;
-  }, [state.columns, state.tasks, assigneeFilter, searchQuery]);
+  }, [state.columns, state.tasks, assigneeFilter, priorityFilter, tagFilter, searchQuery]);
+
+  useEffect(() => {
+    if (!activeBoardId) return;
+    let cancelled = false;
+    fetchSavedViews(supabase, activeBoardId)
+      .then((views) => {
+        if (!cancelled) setSavedViews(views);
+      })
+      .catch((err) => console.error("No se pudieron cargar las vistas guardadas:", err));
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, activeBoardId]);
+
+  function applyView(viewId: string) {
+    setSelectedViewId(viewId);
+    const view = savedViews.find((v) => v.id === viewId);
+    if (!view) return;
+    setSearchQuery(view.filters.searchQuery ?? "");
+    setAssigneeFilter(view.filters.assigneeUserId ?? null);
+    setPriorityFilter(view.filters.priority ?? null);
+    setTagFilter(view.filters.tag ?? null);
+  }
+
+  async function handleSaveView() {
+    if (!activeBoardId || !userId || !newViewName.trim() || savingView) return;
+    setSavingView(true);
+    try {
+      const created = await createSavedView(supabase, activeBoardId, userId, newViewName.trim(), {
+        searchQuery: searchQuery || undefined,
+        assigneeUserId: assigneeFilter,
+        priority: priorityFilter,
+        tag: tagFilter,
+      });
+      setSavedViews((prev) => [...prev, created]);
+      setSelectedViewId(created.id);
+      setNewViewName("");
+      setShowSaveViewForm(false);
+    } catch (err) {
+      console.error("No se pudo guardar la vista:", err);
+    } finally {
+      setSavingView(false);
+    }
+  }
+
+  async function handleDeleteView() {
+    if (!selectedViewId) return;
+    try {
+      await deleteSavedView(supabase, selectedViewId);
+      setSavedViews((prev) => prev.filter((v) => v.id !== selectedViewId));
+      setSelectedViewId("");
+    } catch (err) {
+      console.error("No se pudo eliminar la vista:", err);
+    }
+  }
+
+  const availableTags = Array.from(new Set(Object.values(state.tasks).map((t) => t.tag).filter((t): t is string => Boolean(t)))).sort();
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -211,7 +279,10 @@ export default function Board() {
             <select
               aria-label="Filtrar por persona"
               value={assigneeFilter ?? ""}
-              onChange={(e) => setAssigneeFilter(e.target.value === "" ? null : e.target.value)}
+              onChange={(e) => {
+                setAssigneeFilter(e.target.value === "" ? null : e.target.value);
+                setSelectedViewId("");
+              }}
             >
               <option value="">Todos</option>
               {members.map((member) => {
@@ -224,6 +295,79 @@ export default function Board() {
               })}
             </select>
           </label>
+          <label>
+            Prioridad
+            <select
+              aria-label="Filtrar por prioridad"
+              value={priorityFilter ?? ""}
+              onChange={(e) => {
+                setPriorityFilter(e.target.value || null);
+                setSelectedViewId("");
+              }}
+            >
+              <option value="">Todas</option>
+              <option value="urgent">Urgente</option>
+              <option value="high">Alta</option>
+              <option value="medium">Media</option>
+              <option value="low">Baja</option>
+            </select>
+          </label>
+          {availableTags.length > 0 && (
+            <label>
+              Etiqueta
+              <select
+                aria-label="Filtrar por etiqueta"
+                value={tagFilter ?? ""}
+                onChange={(e) => {
+                  setTagFilter(e.target.value || null);
+                  setSelectedViewId("");
+                }}
+              >
+                <option value="">Todas</option>
+                {availableTags.map((t) => (
+                  <option key={t} value={t}>
+                    {t}
+                  </option>
+                ))}
+              </select>
+            </label>
+          )}
+          <label>
+            Vista guardada
+            <select aria-label="Vista guardada" value={selectedViewId} onChange={(e) => applyView(e.target.value)}>
+              <option value="">Vista personalizada</option>
+              {savedViews.map((v) => (
+                <option key={v.id} value={v.id}>
+                  {v.name}
+                </option>
+              ))}
+            </select>
+          </label>
+          {selectedViewId && (
+            <button type="button" className="icon-btn" title="Eliminar vista" onClick={handleDeleteView}>
+              🗑️
+            </button>
+          )}
+          {!showSaveViewForm ? (
+            <button type="button" className="btn" onClick={() => setShowSaveViewForm(true)}>
+              💾 Guardar vista
+            </button>
+          ) : (
+            <>
+              <input
+                value={newViewName}
+                onChange={(e) => setNewViewName(e.target.value)}
+                placeholder="Nombre de la vista"
+                style={{ width: 160 }}
+              />
+              <button type="button" className="btn primary" onClick={handleSaveView} disabled={!newViewName.trim() || savingView}>
+                {savingView ? "Guardando…" : "Guardar"}
+              </button>
+              <button type="button" className="btn" onClick={() => setShowSaveViewForm(false)}>
+                Cancelar
+              </button>
+            </>
+          )}
         </div>
 
         <div className="board" onMouseMove={handleBoardMouseMove} onMouseLeave={clear}>

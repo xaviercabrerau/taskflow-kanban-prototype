@@ -869,6 +869,7 @@ a.tab {
 }
 .assignee-filter {
   display: flex;
+  flex-wrap: wrap;
   justify-content: flex-start;
   width: fit-content;
   align-items: center;

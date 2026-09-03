@@ -1101,6 +1101,41 @@ export type Database = {
           },
         ]
       }
+      saved_views: {
+        Row: {
+          board_id: string
+          created_at: string
+          filters: Json
+          id: string
+          name: string
+          user_id: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          filters?: Json
+          id?: string
+          name: string
+          user_id: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          filters?: Json
+          id?: string
+          name?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "saved_views_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       sprints: {
         Row: {
           board_id: string
