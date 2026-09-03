@@ -17,8 +17,14 @@ export default function WorkloadPanel({ onClose, embedded = false }: WorkloadPan
 
   const { data, loading } = useEmbeddedPanelData<TimeEntry[]>(
     () => fetchTimeEntriesForTasks(supabase, taskIds),
-    // eslint-disable-next-line react-hooks/exhaustive-deps -- taskIds se recalcula cada render; solo importa su tamaño real (board activo)
-    [supabase, state.tasks],
+    // taskIds.length (no state.tasks) es la dependencia real: editar el
+    // título/prioridad de una tarea existente crea un nuevo objeto
+    // state.tasks en cada mutación, pero no cambia qué tareas hay que
+    // consultar — usar state.tasks completo relanzaba el fetch (y
+    // "Cargando…" parpadeaba) en cada edición del tablero, no solo cuando
+    // se agrega/quita una tarea (hallazgo de la ronda de QA).
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [supabase, taskIds.length],
     { skip: taskIds.length === 0, errorMessage: "No se pudieron cargar las horas registradas." }
   );
   const entries = data ?? [];
@@ -37,6 +43,7 @@ export default function WorkloadPanel({ onClose, embedded = false }: WorkloadPan
     }).length;
     const totalMinutes = minutesByUser.get(m.userId) ?? 0;
     return {
+      userId: m.userId,
       label: m.fullName || m.email || m.userId,
       openTasks,
       hours: Math.round((totalMinutes / 60) * 10) / 10,
@@ -75,7 +82,7 @@ export default function WorkloadPanel({ onClose, embedded = false }: WorkloadPan
         <p style={{ color: "var(--muted)", fontSize: 13.5 }}>Sin miembros en este tablero todavía.</p>
       ) : (
         rows.map((r) => (
-          <div key={r.label} style={{ marginBottom: 12 }}>
+          <div key={r.userId} style={{ marginBottom: 12 }}>
             <div style={{ display: "flex", justifyContent: "space-between", fontSize: 13.5 }}>
               <span style={{ fontWeight: 600 }}>{r.label}</span>
               <span style={{ color: "var(--muted)" }}>

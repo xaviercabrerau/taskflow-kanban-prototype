@@ -74,7 +74,12 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
 
   async function handleCreate(e: React.FormEvent) {
     e.preventDefault();
-    if (!activeBoardId || !tenantId || !title.trim() || !columnId || !startDate || creating) return;
+    // `loading` también bloquea el envío: si el fetch inicial de plantillas
+    // sigue en vuelo, el useEffect que sincroniza `data` -> `templates` más
+    // abajo sobrescribiría con datos viejos el ítem recién creado
+    // optimísticamente, haciéndolo desaparecer de la UI aunque sí se creó
+    // en el servidor (hallazgo de la ronda de QA — verificado en vivo).
+    if (!activeBoardId || !tenantId || !title.trim() || !columnId || !startDate || creating || loading) return;
     setCreating(true);
     setError(null);
     try {
@@ -236,7 +241,7 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
             </p>
           </div>
         )}
-        <button type="submit" className="btn primary" disabled={creating || !title.trim() || !startDate} style={{ alignSelf: "flex-start" }}>
+        <button type="submit" className="btn primary" disabled={creating || loading || !title.trim() || !startDate} style={{ alignSelf: "flex-start" }}>
           {creating ? "Creando…" : "Crear tarea recurrente"}
         </button>
       </form>
