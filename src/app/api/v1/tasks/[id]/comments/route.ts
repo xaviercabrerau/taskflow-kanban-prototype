@@ -22,6 +22,9 @@ export async function POST(
   if (!body.body || typeof body.body !== "string") {
     return NextResponse.json({ error: '"body" is required' }, { status: 400 });
   }
+  if (body.body.length > 4000) {
+    return NextResponse.json({ error: '"body" must be 4000 characters or fewer' }, { status: 400 });
+  }
 
   const { data, error } = await auth.supabase.rpc("mcp_add_comment", {
     p_token: auth.token,

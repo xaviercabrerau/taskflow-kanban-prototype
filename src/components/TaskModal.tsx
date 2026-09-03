@@ -1111,6 +1111,7 @@ export default function TaskModal({
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder="ej. Login SSO con Google Workspace"
+              maxLength={300}
               autoFocus
               required
             />
@@ -2017,6 +2018,7 @@ export default function TaskModal({
                     onKeyDown={handleCommentKeyDown}
                     placeholder="Escribe un comentario… usa @ para mencionar"
                     rows={6}
+                    maxLength={4000}
                     role="combobox"
                     aria-expanded={Boolean(mentionState && mentionMatches.length > 0)}
                     aria-controls={mentionState ? "mention-dropdown-list" : undefined}

@@ -33,6 +33,9 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
   if (!body.title || typeof body.title !== "string") {
     return NextResponse.json({ error: '"title" is required' }, { status: 400 });
   }
+  if (body.title.length > 300) {
+    return NextResponse.json({ error: '"title" must be 300 characters or fewer' }, { status: 400 });
+  }
 
   const { data, error } = await auth.supabase.rpc("mcp_create_task", {
     p_token: auth.token,
