@@ -915,7 +915,7 @@ export default function TaskModal({
                   onChange={handleUploadFile}
                   disabled={uploading}
                 />
-                <div className="comment-input-wrap" style={{ marginTop: 8 }}>
+                <div className="comment-input-wrap">
                   <input
                     value={driveLink}
                     onChange={(e) => setDriveLink(e.target.value)}
@@ -935,7 +935,7 @@ export default function TaskModal({
                   <button
                     type="button"
                     className="btn"
-                    style={{ marginTop: 8 }}
+                    style={{ marginTop: 12 }}
                     onClick={handlePickFromDrive}
                     disabled={pickerAttaching}
                   >
@@ -989,8 +989,8 @@ export default function TaskModal({
                     // descarta y el botón "Enviar" terminaba disparando el
                     // submit del formulario externo (guardaba y cerraba el
                     // modal sin llamar a handleForwardEmail).
-                    <div>
-                      <div className="comment-input-wrap" style={{ marginTop: 8 }}>
+                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
+                      <div className="comment-input-wrap" style={{ marginTop: 0 }}>
                         <input
                           id="forward-email-to"
                           name="forwardEmailTo"
@@ -1016,9 +1016,9 @@ export default function TaskModal({
                         placeholder="Nota (opcional)"
                         disabled={forwardingEmail}
                         rows={2}
-                        style={{ width: "100%", marginTop: 8 }}
+                        style={{ width: "100%" }}
                       />
-                      <div style={{ marginTop: 8 }}>
+                      <div>
                         <button
                           type="button"
                           className="btn primary"

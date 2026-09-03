@@ -792,7 +792,7 @@ a.tab {
   border: 1px solid var(--border);
   border-radius: 12px;
   width: 100%;
-  max-width: 440px;
+  max-width: 500px;
   max-height: min(760px, 90vh);
   box-shadow: 0 12px 32px rgba(0, 0, 0, 0.25);
   display: flex;
@@ -935,6 +935,17 @@ a.tab {
 .comment-input-wrap {
   position: relative;
   margin-top: 10px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+.comment-input-wrap input,
+.comment-input-wrap textarea {
+  flex: 1;
+  min-width: 0;
+}
+.comment-input-wrap > .btn {
+  flex: 0 0 auto;
 }
 .comment-input-wrap + .btn {
   margin-top: 10px;
@@ -1003,7 +1014,8 @@ a.tab {
 }
 .attachment-file-input {
   display: block;
-  margin-bottom: 10px;
+  margin-bottom: 12px;
+  font-size: 13px;
 }
 .attachment-list {
   list-style: none;
