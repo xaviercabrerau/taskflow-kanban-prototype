@@ -88,7 +88,14 @@ export async function proxy(request: NextRequest) {
 
   const isLoginRoute = request.nextUrl.pathname.startsWith("/login");
   const isPublicAuthRoute =
-    isLoginRoute || request.nextUrl.pathname.startsWith("/reset-password");
+    isLoginRoute ||
+    request.nextUrl.pathname.startsWith("/reset-password") ||
+    // /share/[token] es la vista pública de solo lectura (o comentario de
+    // invitado) de un link compartible — ver public_share_links. Un
+    // visitante anónimo debe poder abrirla sin sesión; el propio token en
+    // la URL (validado server-side vía resolve_share_link) es la única
+    // autorización que necesita, no una cuenta de TaskFlow.
+    request.nextUrl.pathname.startsWith("/share/");
   if (!user && !isPublicAuthRoute) {
     const url = request.nextUrl.clone();
     url.pathname = "/login";

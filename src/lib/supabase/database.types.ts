@@ -452,6 +452,7 @@ export type Database = {
           body: string
           created_at: string
           edited_at: string | null
+          guest_name: string | null
           id: string
           mentioned_user_ids: string[]
           parent_comment_id: string | null
@@ -463,6 +464,7 @@ export type Database = {
           body: string
           created_at?: string
           edited_at?: string | null
+          guest_name?: string | null
           id?: string
           mentioned_user_ids?: string[]
           parent_comment_id?: string | null
@@ -474,6 +476,7 @@ export type Database = {
           body?: string
           created_at?: string
           edited_at?: string | null
+          guest_name?: string | null
           id?: string
           mentioned_user_ids?: string[]
           parent_comment_id?: string | null
@@ -990,6 +993,76 @@ export type Database = {
           status?: string
         }
         Relationships: []
+      }
+      public_share_links: {
+        Row: {
+          board_id: string
+          created_at: string
+          created_by: string | null
+          expires_at: string | null
+          id: string
+          label: string | null
+          last_accessed_at: string | null
+          permission: string
+          revoked_at: string | null
+          scope: string
+          task_id: string | null
+          tenant_id: string
+          token_hash: string
+        }
+        Insert: {
+          board_id: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          label?: string | null
+          last_accessed_at?: string | null
+          permission?: string
+          revoked_at?: string | null
+          scope: string
+          task_id?: string | null
+          tenant_id: string
+          token_hash: string
+        }
+        Update: {
+          board_id?: string
+          created_at?: string
+          created_by?: string | null
+          expires_at?: string | null
+          id?: string
+          label?: string | null
+          last_accessed_at?: string | null
+          permission?: string
+          revoked_at?: string | null
+          scope?: string
+          task_id?: string | null
+          tenant_id?: string
+          token_hash?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "public_share_links_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "public_share_links_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "public_share_links_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
       }
       role_assignments: {
         Row: {
@@ -1626,6 +1699,10 @@ export type Database = {
       [_ in never]: never
     }
     Functions: {
+      add_share_link_comment: {
+        Args: { p_body: string; p_guest_name: string; p_token: string }
+        Returns: Json
+      }
       automation_conditions_match: {
         Args: {
           conditions: Json
@@ -1678,6 +1755,20 @@ export type Database = {
           isOneToOne: true
           isSetofReturn: false
         }
+      }
+      create_share_link: {
+        Args: {
+          p_board_id: string
+          p_expires_at: string
+          p_label: string
+          p_permission: string
+          p_scope: string
+          p_task_id: string
+        }
+        Returns: {
+          link_id: string
+          token: string
+        }[]
       }
       execute_due_date_automations: { Args: never; Returns: undefined }
       execute_sla_automations: { Args: never; Returns: undefined }
@@ -1788,6 +1879,7 @@ export type Database = {
         Args: { p_integration_id: string }
         Returns: undefined
       }
+      resolve_share_link: { Args: { p_token: string }; Returns: Json }
       revoke_mcp_session: { Args: { p_session_id: string }; Returns: undefined }
       search_profile_by_email: {
         Args: { p_email: string }

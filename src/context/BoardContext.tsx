@@ -483,7 +483,8 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         hasLoadedRef.current = false;
         const isPublicAuthRoute =
           pathnameRef.current === "/login" ||
-          pathnameRef.current?.startsWith("/reset-password");
+          pathnameRef.current?.startsWith("/reset-password") ||
+          pathnameRef.current?.startsWith("/share/");
         if (!isPublicAuthRoute) {
           router.replace("/login");
         }
