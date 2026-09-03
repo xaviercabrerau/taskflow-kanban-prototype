@@ -13,6 +13,8 @@ export interface Task {
   attachmentCount?: number;
   createdAt?: string; // ISO timestamp, para métricas de antigüedad/cycle time
   parentTaskId?: string | null; // subtarea de otra tarea; null/undefined = tarea de nivel superior
+  epicId?: string | null;
+  sprintId?: string | null;
 }
 
 export function priorityLabel(p: Priority): string {

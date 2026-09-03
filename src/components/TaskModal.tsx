@@ -36,6 +36,8 @@ import {
 import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
 import { generateTempId } from "@/lib/tempId";
 import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
+import { fetchEpics, type Epic } from "@/lib/supabase/epics-repo";
+import { fetchSprints, type Sprint } from "@/lib/supabase/sprints-repo";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
 
 function formatFileSize(bytes: number | null): string {
@@ -74,12 +76,16 @@ export default function TaskModal({
   onDelete,
   onOpenTask,
 }: TaskModalProps) {
-  const { can, supabase, userId, tenantId, members, integrations, state, addTask } = useBoard();
+  const { can, supabase, userId, tenantId, members, integrations, state, addTask, activeBoardId } = useBoard();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? "medium");
   const [assignee, setAssignee] = useState(initial?.assignee ?? "");
   const [tag, setTag] = useState(initial?.tag ?? "");
   const [dueDate, setDueDate] = useState(initial?.dueDate ?? "");
+  const [epicId, setEpicId] = useState(initial?.epicId ?? "");
+  const [sprintId, setSprintId] = useState(initial?.sprintId ?? "");
+  const [epics, setEpics] = useState<Epic[]>([]);
+  const [sprints, setSprints] = useState<Sprint[]>([]);
   const [selectedColumnId, setSelectedColumnId] = useState(columnId);
   const modalRef = useRef<HTMLFormElement>(null);
   useDialogA11y(modalRef, onClose);
@@ -171,6 +177,27 @@ export default function TaskModal({
   function resolveColumnName(colId: string): string | undefined {
     return columns.find((c) => c.id === colId)?.title;
   }
+
+  // Épicas/sprints son catálogos por tablero, no por tarea — se cargan
+  // aunque el modal esté en modo "create" (sin taskId todavía), a
+  // diferencia de las etiquetas/checklists/etc. de abajo.
+  useEffect(() => {
+    if (!activeBoardId) return;
+    let cancelled = false;
+    Promise.all([fetchEpics(supabase, activeBoardId), fetchSprints(supabase, activeBoardId)])
+      .then(([epicsData, sprintsData]) => {
+        if (!cancelled) {
+          setEpics(epicsData);
+          setSprints(sprintsData);
+        }
+      })
+      .catch((err) => {
+        console.error("No se pudieron cargar épicas/sprints:", err);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, activeBoardId]);
 
   useEffect(() => {
     if (!taskId) return;
@@ -775,6 +802,8 @@ export default function TaskModal({
         dueDate: dueDate || undefined,
         commentCount: initial?.commentCount,
         attachmentCount: initial?.attachmentCount,
+        epicId: epicId || null,
+        sprintId: sprintId || null,
       },
       selectedColumnId,
       initial?.id
@@ -871,6 +900,30 @@ export default function TaskModal({
                   return badge ? <span className={`due-badge ${badge.variant}`}>{badge.label}</span> : null;
                 })()}
               </div>
+            </div>
+          </div>
+          <div className="field-row">
+            <div className="field">
+              <label htmlFor="epic">Épica</label>
+              <select id="epic" value={epicId} onChange={(e) => setEpicId(e.target.value)}>
+                <option value="">Sin épica</option>
+                {epics.map((ep) => (
+                  <option key={ep.id} value={ep.id}>
+                    {ep.name}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div className="field">
+              <label htmlFor="sprint">Sprint</label>
+              <select id="sprint" value={sprintId} onChange={(e) => setSprintId(e.target.value)}>
+                <option value="">Sin sprint</option>
+                {sprints.map((sp) => (
+                  <option key={sp.id} value={sp.id}>
+                    {sp.name} {sp.status === "active" ? "(activo)" : sp.status === "closed" ? "(cerrado)" : ""}
+                  </option>
+                ))}
+              </select>
             </div>
           </div>
 

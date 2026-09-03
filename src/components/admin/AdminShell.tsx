@@ -29,6 +29,7 @@ const NAV_GROUPS: NavGroup[] = [
   {
     label: "Producto",
     items: [
+      { href: "/admin/planificacion", label: "Épicas y Sprints", icon: "🎯" },
       { href: "/admin/automatizaciones", label: "Automatizaciones", icon: "⚡" },
       { href: "/admin/campos-personalizados", label: "Campos personalizados", icon: "🏷️" },
       { href: "/admin/plantillas", label: "Plantillas", icon: "🧩" },
