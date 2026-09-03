@@ -1,5 +1,7 @@
 # Auditoría TaskFlow — 2026-09-03
 
+> ✅ **Estado: los 17 hallazgos fueron corregidos y desplegados a producción** (Fases A, B y C, más un seguimiento posterior para el hallazgo 8). Ver la columna "Estado" en la tabla de abajo y el detalle de cada corrección en el historial de commits (`fix: auditoría 2026-09-03 Fase A/B/C`, `feat: anclaje real a día de la semana/mes`). Este documento se conserva como registro histórico de lo encontrado; para el estado actual del sistema ver [DOCUMENTACION_PROYECTO.md](DOCUMENTACION_PROYECTO.md).
+
 Auditoría de calidad, seguridad, base de datos y performance/DevOps sobre el estado actual del proyecto, con foco en todo lo construido desde la auditoría anterior (`AUDITORIA_COMPLETA_2026-08-28.md`): relay Slack/Teams, épicas/sprints, vistas guardadas, acciones en lote, command palette, time tracking, workload/portafolio, acceso de invitado + links públicos compartibles, tareas recurrentes, API pública REST, PWA, y el andamiaje de IA/GitHub.
 
 **Metodología:** 4 auditorías especializadas ejecutadas en paralelo (seguridad, base de datos/esquema, calidad de código TypeScript/React, performance/DevOps), cada una con instrucciones de no repetir hallazgos ya corregidos en la auditoría de agosto y de verificar antes de reportar. Dos de ellas (seguridad y base de datos), trabajando de forma independiente y sin verse entre sí, llegaron **al mismo hallazgo crítico** por caminos distintos — eso le da alta confianza a ese hallazgo en particular.
@@ -8,25 +10,25 @@ Auditoría de calidad, seguridad, base de datos y performance/DevOps sobre el es
 
 ## Resumen ejecutivo
 
-| # | Hallazgo | Severidad | Área | Esfuerzo |
-|---|---|---|---|---|
-| 1 | `public_share_links`, `recurring_task_templates`, `task_github_links` y la RPC `create_share_link` no exigen verificación MFA/AAL2 — bypassea el control ya establecido en el resto del esquema | 🔴 Crítico | Seguridad + BD | Bajo |
-| 2 | `execute_recurring_tasks()` sin lock contra solapamiento del propio cron → riesgo de tareas duplicadas | 🔴 Crítico | BD | Bajo |
-| 3 | El cron `taskflow_execute_recurring_tasks` quedó fuera del sistema de monitoreo en 3 lugares distintos | 🔴 Crítico | DevOps + BD | Bajo |
-| 4 | 4 cron jobs horarios programados en el mismo minuto exacto → riesgo de colisión de filas | 🟠 Alto | BD | Bajo |
-| 5 | Sin límite de longitud en título/comentario vía `mcp_create_task`/`mcp_add_comment` (ni en la UI) | 🟠 Alto | Seguridad + DevOps | Bajo |
-| 6 | Alerta de cron corre 1x/día — ventana de detección de hasta 24h con 6 jobs activos | 🟠 Alto | DevOps | Bajo |
-| 7 | `resolve_share_link` expone el hilo completo de comentarios internos del equipo, no solo los de invitados | 🟡 Medio | Seguridad | Bajo |
-| 8 | `execute_recurring_tasks()` ignora `day_of_week`/`day_of_month` — bug funcional, no coincide con lo que la UI promete | 🟡 Medio | BD | Medio |
-| 9 | `comments.source = 'guest'` puede ser falsificado por un miembro autenticado (falta `with check`) | 🟡 Medio | Seguridad | Bajo |
-| 10 | `TaskModal.tsx` (2085 líneas) dispara 10 fetches en paralelo al abrir, incluso para secciones poco usadas | 🟡 Medio | Código | Medio |
-| 11 | `BoardContext.tsx`: un solo `value` memoizado con todo el estado → re-render de toda la app en cada toast/drag | 🟡 Medio | Código | Alto |
-| 12 | Falta índice en `recurring_task_templates(board_id)`, usado directamente por la app | 🟢 Bajo | BD | Trivial |
-| 13 | 3 paneles embebidos (Recurring/Portfolio/Workload) duplican el mismo wrapper modal/embedded y export CSV/PDF | 🟢 Bajo | Código | Medio |
-| 14 | Mensajes de error crudos de Postgres filtrados en algunas rutas nuevas (`insertError.message` sin sanitizar) | 🟢 Bajo | Seguridad | Trivial |
-| 15 | `sw.js`: `CACHE_NAME` no se versiona por deploy | 🟢 Bajo | DevOps | Bajo |
-| 16 | `.env.example` con ~55 variables no usadas por el código actual | 🟢 Bajo | DevOps | Trivial |
-| 17 | `AGENTS.md` sigue conteniendo texto con forma de inyección de prompt hacia agentes de IA | ℹ️ Informativo | Seguridad | Trivial |
+| # | Hallazgo | Severidad | Área | Esfuerzo | Estado |
+|---|---|---|---|---|---|
+| 1 | `public_share_links`, `recurring_task_templates`, `task_github_links` y la RPC `create_share_link` no exigen verificación MFA/AAL2 — bypassea el control ya establecido en el resto del esquema | 🔴 Crítico | Seguridad + BD | Bajo | ✅ Corregido (Fase A) |
+| 2 | `execute_recurring_tasks()` sin lock contra solapamiento del propio cron → riesgo de tareas duplicadas | 🔴 Crítico | BD | Bajo | ✅ Corregido (Fase A) |
+| 3 | El cron `taskflow_execute_recurring_tasks` quedó fuera del sistema de monitoreo en 3 lugares distintos | 🔴 Crítico | DevOps + BD | Bajo | ✅ Corregido (Fase A) |
+| 4 | 4 cron jobs horarios programados en el mismo minuto exacto → riesgo de colisión de filas | 🟠 Alto | BD | Bajo | ✅ Corregido (Fase B) |
+| 5 | Sin límite de longitud en título/comentario vía `mcp_create_task`/`mcp_add_comment` (ni en la UI) | 🟠 Alto | Seguridad + DevOps | Bajo | ✅ Corregido (Fase B) |
+| 6 | Alerta de cron corre 1x/día — ventana de detección de hasta 24h con 6 jobs activos | 🟠 Alto | DevOps | Bajo | ⚠️ Intentado, revertido — el plan Hobby de Vercel no permite cron más frecuente que diario. Requiere plan Pro o monitor externo |
+| 7 | `resolve_share_link` expone el hilo completo de comentarios internos del equipo, no solo los de invitados | 🟡 Medio | Seguridad | Bajo | ✅ Corregido (Fase B) |
+| 8 | `execute_recurring_tasks()` ignora `day_of_week`/`day_of_month` — bug funcional, no coincide con lo que la UI promete | 🟡 Medio | BD | Medio | ✅ Corregido (seguimiento post-auditoría, 2026-09-03) |
+| 9 | `comments.source = 'guest'` puede ser falsificado por un miembro autenticado (falta `with check`) | 🟡 Medio | Seguridad | Bajo | ✅ Corregido (Fase A) |
+| 10 | `TaskModal.tsx` (2085 líneas) dispara 10 fetches en paralelo al abrir, incluso para secciones poco usadas | 🟡 Medio | Código | Medio | ✅ Corregido (Fase C) |
+| 11 | `BoardContext.tsx`: un solo `value` memoizado con todo el estado → re-render de toda la app en cada toast/drag | 🟡 Medio | Código | Alto | ✅ Corregido (Fase C) |
+| 12 | Falta índice en `recurring_task_templates(board_id)`, usado directamente por la app | 🟢 Bajo | BD | Trivial | ✅ Corregido (Fase C) |
+| 13 | 3 paneles embebidos (Recurring/Portfolio/Workload) duplican el mismo wrapper modal/embedded y export CSV/PDF | 🟢 Bajo | Código | Medio | ✅ Corregido (Fase C) |
+| 14 | Mensajes de error crudos de Postgres filtrados en algunas rutas nuevas (`insertError.message` sin sanitizar) | 🟢 Bajo | Seguridad | Trivial | ✅ Corregido (Fase C) |
+| 15 | `sw.js`: `CACHE_NAME` no se versiona por deploy | 🟢 Bajo | DevOps | Bajo | ✅ Corregido (Fase C) |
+| 16 | `.env.example` con ~55 variables no usadas por el código actual | 🟢 Bajo | DevOps | Trivial | ✅ Corregido (Fase C) |
+| 17 | `AGENTS.md` sigue conteniendo texto con forma de inyección de prompt hacia agentes de IA | ℹ️ Informativo | Seguridad | Trivial | ✅ Investigado — confirmado que es una función real de Next.js 16, no una inyección (Fase C) |
 
 ---
 

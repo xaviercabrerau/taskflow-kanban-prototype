@@ -33,13 +33,12 @@ cuentas de prueba/piloto, no con tráfico de producción a escala.
   Dominio de producción: `https://task.conto.ec`.
 - **Drag-and-drop:** `@dnd-kit`.
 - **Notificaciones:** email vía Resend (integración del Vercel Marketplace)
-  + notificaciones in-app en Supabase, con Upstash Redis (también del
-  Marketplace) como backend de KV. Solo 2 de 8 tipos de evento están
-  conectados a un punto real de la app hoy (menciones y cambios de estado,
-  vía triggers de Postgres); el resto existe en código pero no se dispara
-  todavía. El análisis de respuestas por Gmail está bloqueado hasta contar
-  con una cuenta real de Google Workspace. Ver el detalle completo en
-  [`OBSERVABILITY.md`](./OBSERVABILITY.md#6-notification-system--email--in-app).
+  + notificaciones in-app en Supabase + relay saliente a Slack/Teams (desde
+  2026-09-03), con Upstash Redis (también del Marketplace) como backend de
+  KV. El análisis de respuestas por Gmail está bloqueado hasta contar con
+  una cuenta real de Google Workspace. Ver el detalle completo en
+  [`OBSERVABILITY.md`](./OBSERVABILITY.md#6-notification-system--email--in-app)
+  y [`DOCUMENTACION_PROYECTO.md`](./DOCUMENTACION_PROYECTO.md#6-sistema-de-notificaciones).
 - **Observabilidad:** endpoints de salud (`/api/health`, `/api/health/cron`)
   y un cron de alertas (`/api/cron/alert-check`, programado a diario vía
   `vercel.json`) ya construidos y funcionando. El rate limiting del
@@ -142,6 +141,13 @@ partir de ahora:
    otro cambio estructural debe pasar siempre por una migración versionada.
 
 ## Estado reciente
+
+### 2026-09-03
+
+- **Roadmap de funcionalidades completo**: de los 24 ítems identificados en [ROADMAP_FUNCIONALIDADES.md](./ROADMAP_FUNCIONALIDADES.md) (subtareas, dependencias, épicas/sprints, vistas guardadas, acciones en lote, time tracking, carga de trabajo, portafolio, acceso de invitado + links públicos compartibles, tareas recurrentes con anclaje a día, API pública REST, PWA instalable, andamiaje de IA y GitHub), **22 quedaron implementados y desplegados**. 2 no se construyeron (sugerencia de prioridad por IA; recepción/slash commands de Slack — solo se hizo el relay saliente) — detalle en el propio roadmap.
+- **Auditoría completa** ([AUDITORIA_2026-09-03.md](./AUDITORIA_2026-09-03.md)): 17 hallazgos en seguridad, base de datos, calidad de código y performance/DevOps, **los 17 corregidos**. El más grave: 4 tablas/función nuevas se saltaban el gate de verificación en dos pasos (MFA/AAL2) que el resto del esquema exige, permitiendo — en una organización con MFA obligatorio — que una sesión sin verificación en dos pasos generara un link público y leyera el contenido de una tarea sin autenticación alguna. También se corrigió un riesgo real de tareas duplicadas (cron sin lock de solapamiento) y un cron que había quedado invisible para el sistema de monitoreo.
+- `tsc --noEmit`, `next build` y la suite de Jest (199 tests) en verde en cada entrega de esta sesión.
+- Documentación (`DOCUMENTACION_PROYECTO.md`, `ROADMAP_FUNCIONALIDADES.md`, `AUDITORIA_2026-09-03.md`, este archivo) actualizada para reflejar el estado real del sistema.
 
 ### 2026-08-28
 
