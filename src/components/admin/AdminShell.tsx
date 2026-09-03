@@ -34,6 +34,8 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/campos-personalizados", label: "Campos personalizados", icon: "🏷️" },
       { href: "/admin/plantillas", label: "Plantillas", icon: "🧩" },
       { href: "/admin/reportes", label: "Reportes", icon: "📊" },
+      { href: "/admin/carga-trabajo", label: "Carga de trabajo", icon: "⚖️" },
+      { href: "/admin/portafolio", label: "Portafolio", icon: "🗂️" },
       { href: "/admin/integraciones", label: "Integraciones", icon: "🔌", ownerOnly: true },
     ],
   },

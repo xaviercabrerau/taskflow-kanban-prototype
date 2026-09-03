@@ -1445,6 +1445,47 @@ export type Database = {
           },
         ]
       }
+      time_entries: {
+        Row: {
+          created_at: string
+          ended_at: string | null
+          id: string
+          minutes: number | null
+          note: string | null
+          started_at: string
+          task_id: string
+          user_id: string
+        }
+        Insert: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          minutes?: number | null
+          note?: string | null
+          started_at?: string
+          task_id: string
+          user_id: string
+        }
+        Update: {
+          created_at?: string
+          ended_at?: string | null
+          id?: string
+          minutes?: number | null
+          note?: string | null
+          started_at?: string
+          task_id?: string
+          user_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "time_entries_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       webhooks_inbound: {
         Row: {
           board_id: string
@@ -1720,6 +1761,16 @@ export type Database = {
         Returns: undefined
       }
       my_permissions: { Args: { bid: string }; Returns: string[] }
+      portfolio_summary: {
+        Args: never
+        Returns: {
+          board_id: string
+          board_name: string
+          done_tasks: number
+          overdue_tasks: number
+          total_tasks: number
+        }[]
+      }
       purge_expired_audit_logs: { Args: never; Returns: undefined }
       record_daily_metrics_snapshot: {
         Args: { p_board_id: string }
