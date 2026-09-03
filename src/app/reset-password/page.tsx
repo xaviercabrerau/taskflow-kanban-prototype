@@ -1,16 +1,53 @@
 "use client";
 
-import { useState } from "react";
-import { useRouter } from "next/navigation";
+import { Suspense, useState } from "react";
+import { useRouter, useSearchParams } from "next/navigation";
 import { createClient } from "@/lib/supabase/client";
 
-export default function ResetPasswordPage() {
+// Mapa de error_code -> mensaje en español. Supabase agrega estos params a
+// la URL de redirect cuando el link de recuperación es inválido/expiró/ya
+// se usó — antes esta página los ignoraba por completo y mostraba el
+// formulario de "elegir nueva contraseña" como si el link fuera válido; el
+// usuario solo se enteraba del problema al enviar el formulario, con un
+// "Auth session missing!" que no explica qué pasó ni qué hacer.
+const LINK_ERROR_MESSAGES: Record<string, string> = {
+  otp_expired: "Este link de recuperación expiró.",
+  access_denied: "Este link de recuperación no es válido — puede que ya se haya usado.",
+};
+
+function ResetPasswordForm() {
   const router = useRouter();
+  const searchParams = useSearchParams();
   const supabase = createClient();
   const [password, setPassword] = useState("");
   const [confirmPassword, setConfirmPassword] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [loading, setLoading] = useState(false);
+
+  const linkErrorCode = searchParams.get("error_code") ?? searchParams.get("error");
+  if (linkErrorCode) {
+    const message = LINK_ERROR_MESSAGES[linkErrorCode] ?? "Este link de recuperación no es válido.";
+    return (
+      <div className="modal-backdrop" style={{ position: "static", minHeight: "100vh" }}>
+        <div className="modal" style={{ width: 360 }}>
+          <div className="modal-head">
+            <h2>Link no válido</h2>
+          </div>
+          <div className="modal-body">
+            <p style={{ fontSize: 13.5, marginTop: 0 }}>{message}</p>
+            <p style={{ fontSize: 13.5, color: "var(--muted)" }}>
+              Solicita un nuevo link desde la pantalla de inicio de sesión ("¿Olvidaste tu contraseña?").
+            </p>
+          </div>
+          <div className="modal-foot">
+            <a href="/login" className="btn primary">
+              Volver a iniciar sesión
+            </a>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   async function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -76,5 +113,15 @@ export default function ResetPasswordPage() {
         </div>
       </form>
     </div>
+  );
+}
+
+// useSearchParams() exige un límite de Suspense en el App Router (si no,
+// Next.js falla el build con "should be wrapped in a suspense boundary").
+export default function ResetPasswordPage() {
+  return (
+    <Suspense fallback={null}>
+      <ResetPasswordForm />
+    </Suspense>
   );
 }
