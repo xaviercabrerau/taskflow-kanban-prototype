@@ -35,6 +35,7 @@ import {
 } from "@/lib/supabase/tags-repo";
 import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
 import { generateTempId } from "@/lib/tempId";
+import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
 
 function formatFileSize(bytes: number | null): string {
@@ -122,6 +123,12 @@ export default function TaskModal({
   const [forwardResult, setForwardResult] = useState<{ ok: boolean; message: string } | null>(null);
 
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
+
+  const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
+  const [linkTargetId, setLinkTargetId] = useState("");
+  const [linkDirection, setLinkDirection] = useState<"blocked_by" | "blocks">("blocked_by");
+  const [linkingBusy, setLinkingBusy] = useState(false);
+  const [linkError, setLinkError] = useState<string | null>(null);
 
   const [meetFormOpen, setMeetFormOpen] = useState(false);
   const [meetDate, setMeetDate] = useState("");
@@ -272,6 +279,14 @@ export default function TaskModal({
       })
       .catch((err) => {
         console.error("No se pudo cargar el estado de la reunión:", err);
+      });
+
+    fetchTaskLinks(supabase, taskId)
+      .then((links) => {
+        if (!cancelled) setTaskLinks(links);
+      })
+      .catch((err) => {
+        console.error("No se pudieron cargar las dependencias:", err);
       });
 
     return () => {
@@ -572,6 +587,48 @@ export default function TaskModal({
       parentTaskId: taskId,
     });
     setNewSubtaskTitle("");
+  }
+
+  // Dependencies (task_links, link_type "blocks"): "blockedBy" are tasks
+  // that must finish before this one can start; "blocking" are tasks this
+  // one is holding up. Only surfacing "blocks" in the UI for now — the DB
+  // also allows "related_to"/"duplicates" but those add UI complexity with
+  // no clear v1 payoff (YAGNI).
+  const blockedBy = taskId
+    ? taskLinks.filter((l) => l.linkType === "blocks" && l.targetTaskId === taskId).map((l) => ({ link: l, task: state.tasks[l.sourceTaskId] }))
+    : [];
+  const blocking = taskId
+    ? taskLinks.filter((l) => l.linkType === "blocks" && l.sourceTaskId === taskId).map((l) => ({ link: l, task: state.tasks[l.targetTaskId] }))
+    : [];
+  const blockedByUnresolved = blockedBy.filter(({ task: t }) => {
+    if (!t) return false;
+    const col = columns.find((c) => c.taskIds.includes(t.id));
+    return !(col?.isDoneState ?? false);
+  });
+
+  async function handleAddLink() {
+    if (!taskId || !linkTargetId || linkingBusy) return;
+    setLinkingBusy(true);
+    setLinkError(null);
+    try {
+      const [sourceId, targetId] = linkDirection === "blocked_by" ? [linkTargetId, taskId] : [taskId, linkTargetId];
+      const created = await createTaskLink(supabase, sourceId, targetId, "blocks");
+      setTaskLinks((prev) => [...prev, created]);
+      setLinkTargetId("");
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "No se pudo crear la dependencia.");
+    } finally {
+      setLinkingBusy(false);
+    }
+  }
+
+  async function handleRemoveLink(linkId: string) {
+    try {
+      await deleteTaskLink(supabase, linkId);
+      setTaskLinks((prev) => prev.filter((l) => l.id !== linkId));
+    } catch (err) {
+      setLinkError(err instanceof Error ? err.message : "No se pudo eliminar la dependencia.");
+    }
   }
 
   async function handleAddChecklist(e: React.FormEvent) {
@@ -949,6 +1006,105 @@ export default function TaskModal({
                       Agregar
                     </button>
                   </div>
+                )}
+              </div>
+
+              <div className="field task-section">
+                <label>Dependencias</label>
+                {blockedByUnresolved.length > 0 && (
+                  <p role="alert" className="field-error" style={{ marginBottom: 10 }}>
+                    ⚠️ Bloqueada por {blockedByUnresolved.length} tarea(s) sin terminar
+                  </p>
+                )}
+                {linkError && (
+                  <p role="alert" className="field-error">
+                    {linkError}
+                  </p>
+                )}
+                {blockedBy.length === 0 && blocking.length === 0 ? (
+                  <p>Sin dependencias todavía.</p>
+                ) : (
+                  <ul className="attachment-list">
+                    {blockedBy.map(({ link, task: t }) => (
+                      <li key={link.id} className="attachment-item">
+                        <span className="attachment-name">
+                          Bloqueada por:{" "}
+                          {t ? (
+                            <button type="button" className="comment-reply-btn" style={{ display: "inline", margin: 0 }} onClick={() => onOpenTask?.(t)}>
+                              {t.title}
+                            </button>
+                          ) : (
+                            "(tarea eliminada)"
+                          )}
+                        </span>
+                        <button type="button" className="btn danger" onClick={() => handleRemoveLink(link.id)}>
+                          Quitar
+                        </button>
+                      </li>
+                    ))}
+                    {blocking.map(({ link, task: t }) => (
+                      <li key={link.id} className="attachment-item">
+                        <span className="attachment-name">
+                          Bloquea a:{" "}
+                          {t ? (
+                            <button type="button" className="comment-reply-btn" style={{ display: "inline", margin: 0 }} onClick={() => onOpenTask?.(t)}>
+                              {t.title}
+                            </button>
+                          ) : (
+                            "(tarea eliminada)"
+                          )}
+                        </span>
+                        <button type="button" className="btn danger" onClick={() => handleRemoveLink(link.id)}>
+                          Quitar
+                        </button>
+                      </li>
+                    ))}
+                  </ul>
+                )}
+                {taskId && (
+                  <div className="field-row" style={{ marginTop: 10 }}>
+                    <div className="field">
+                      <label htmlFor="link-direction">Relación</label>
+                      <select
+                        id="link-direction"
+                        value={linkDirection}
+                        onChange={(e) => setLinkDirection(e.target.value as "blocked_by" | "blocks")}
+                        disabled={linkingBusy}
+                      >
+                        <option value="blocked_by">Está bloqueada por…</option>
+                        <option value="blocks">Bloquea a…</option>
+                      </select>
+                    </div>
+                    <div className="field">
+                      <label htmlFor="link-target">Tarea</label>
+                      <select
+                        id="link-target"
+                        value={linkTargetId}
+                        onChange={(e) => setLinkTargetId(e.target.value)}
+                        disabled={linkingBusy}
+                      >
+                        <option value="">Selecciona una tarea…</option>
+                        {Object.values(state.tasks)
+                          .filter((t) => t.id !== taskId)
+                          .map((t) => (
+                            <option key={t.id} value={t.id}>
+                              {t.title}
+                            </option>
+                          ))}
+                      </select>
+                    </div>
+                  </div>
+                )}
+                {taskId && (
+                  <button
+                    type="button"
+                    className="btn"
+                    style={{ marginTop: 10 }}
+                    onClick={handleAddLink}
+                    disabled={!linkTargetId || linkingBusy}
+                  >
+                    {linkingBusy ? "Agregando…" : "Agregar dependencia"}
+                  </button>
                 )}
               </div>
 
