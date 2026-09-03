@@ -4,6 +4,7 @@ import Link from "next/link";
 import { usePathname } from "next/navigation";
 import { ReactNode, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useToast } from "@/context/ToastContext";
 import { assigneeColor, assigneeInitial } from "@/lib/types";
 import InviteModal from "./InviteModal";
 import AutomationsModal from "./AutomationsModal";
@@ -46,9 +47,8 @@ export default function Shell({ children, onNewTask }: ShellProps) {
     supabase,
     members,
     userId,
-    toasts,
-    dismissToast,
   } = useBoard();
+  const { toasts, dismissToast } = useToast();
   const currentMember = members.find((m) => m.userId === userId);
   const currentUserLabel = currentMember?.fullName || currentMember?.email || "Sesión activa";
   const [showInvite, setShowInvite] = useState(false);

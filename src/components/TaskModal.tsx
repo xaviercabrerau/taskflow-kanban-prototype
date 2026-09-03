@@ -332,17 +332,6 @@ export default function TaskModal({
         if (!cancelled) setActivityLoading(false);
       });
 
-    fetchTaskMeetInfo(supabase, taskId)
-      .then((info) => {
-        if (!cancelled) {
-          setMeetLink(info.meetLink);
-          setMeetScheduledAt(info.meetScheduledAt);
-        }
-      })
-      .catch((err) => {
-        console.error("No se pudo cargar el estado de la reunión:", err);
-      });
-
     fetchTaskLinks(supabase, taskId)
       .then((links) => {
         if (!cancelled) setTaskLinks(links);
@@ -351,37 +340,68 @@ export default function TaskModal({
         console.error("No se pudieron cargar las dependencias:", err);
       });
 
-    fetchTaskGithubLinks(supabase, taskId)
-      .then((links) => {
-        if (!cancelled) setGithubLinks(links);
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar los links de GitHub:", err);
-      });
-
-    fetch(`/api/share-links?boardId=${encodeURIComponent(activeBoardId ?? "")}`)
-      .then((res) => res.json())
-      .then((json) => {
-        if (!cancelled && Array.isArray(json.links)) {
-          setShareLinks((json.links as ShareLink[]).filter((l) => l.taskId === taskId));
-        }
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar los links compartidos:", err);
-      });
-
-    fetchTaskTimeEntries(supabase, taskId)
-      .then((entries) => {
-        if (!cancelled) setTimeEntries(entries);
-      })
-      .catch((err) => {
-        console.error("No se pudo cargar el tiempo registrado:", err);
-      });
-
     return () => {
       cancelled = true;
     };
   }, [supabase, taskId, tenantId, activeBoardId]);
+
+  // Reunión, GitHub, Compartir y Tiempo son secciones minoritarias — la
+  // mayoría de usuarios nunca las abre en una sesión dada. Se cargan en un
+  // efecto aparte, con un pequeño delay, para no competir con los ~6 fetches
+  // "core" de arriba (comments/attachments/checklists/tags/activity/links)
+  // por ancho de banda justo cuando el modal recién se vuelve interactivo
+  // (AUDITORIA_2026-09-03.md, hallazgo 10).
+  useEffect(() => {
+    if (!taskId) return;
+    let cancelled = false;
+
+    const timer = setTimeout(() => {
+      if (cancelled) return;
+
+      fetchTaskMeetInfo(supabase, taskId)
+        .then((info) => {
+          if (!cancelled) {
+            setMeetLink(info.meetLink);
+            setMeetScheduledAt(info.meetScheduledAt);
+          }
+        })
+        .catch((err) => {
+          console.error("No se pudo cargar el estado de la reunión:", err);
+        });
+
+      fetchTaskGithubLinks(supabase, taskId)
+        .then((links) => {
+          if (!cancelled) setGithubLinks(links);
+        })
+        .catch((err) => {
+          console.error("No se pudieron cargar los links de GitHub:", err);
+        });
+
+      fetch(`/api/share-links?boardId=${encodeURIComponent(activeBoardId ?? "")}`)
+        .then((res) => res.json())
+        .then((json) => {
+          if (!cancelled && Array.isArray(json.links)) {
+            setShareLinks((json.links as ShareLink[]).filter((l) => l.taskId === taskId));
+          }
+        })
+        .catch((err) => {
+          console.error("No se pudieron cargar los links compartidos:", err);
+        });
+
+      fetchTaskTimeEntries(supabase, taskId)
+        .then((entries) => {
+          if (!cancelled) setTimeEntries(entries);
+        })
+        .catch((err) => {
+          console.error("No se pudo cargar el tiempo registrado:", err);
+        });
+    }, 200);
+
+    return () => {
+      cancelled = true;
+      clearTimeout(timer);
+    };
+  }, [supabase, taskId, activeBoardId]);
 
   const mentionMatches: OrgMember[] =
     mentionState !== null

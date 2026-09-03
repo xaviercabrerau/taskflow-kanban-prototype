@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { BoardProvider } from "@/context/BoardContext";
+import { ToastProvider } from "@/context/ToastContext";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import MfaAalGate from "@/components/MfaAalGate";
 import MfaGate from "@/components/MfaGate";
@@ -48,13 +49,18 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             datos del board nunca lleguen a memoria del cliente antes de
             que la sesión alcance el nivel de verificación requerido. */}
         <ServiceWorkerRegister />
-        <PasswordChangeGate>
-          <MfaAalGate>
-            <BoardProvider>
-              <MfaGate>{children}</MfaGate>
-            </BoardProvider>
-          </MfaAalGate>
-        </PasswordChangeGate>
+        {/* ToastProvider envuelve todo lo demás: BoardProvider consume
+            useToast() internamente (ver ToastContext.tsx), así que debe ser
+            un ancestro suyo. */}
+        <ToastProvider>
+          <PasswordChangeGate>
+            <MfaAalGate>
+              <BoardProvider>
+                <MfaGate>{children}</MfaGate>
+              </BoardProvider>
+            </MfaAalGate>
+          </PasswordChangeGate>
+        </ToastProvider>
       </body>
     </html>
   );

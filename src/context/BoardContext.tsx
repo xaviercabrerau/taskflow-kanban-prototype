@@ -14,6 +14,7 @@ import type { Session, SupabaseClient } from "@supabase/supabase-js";
 import { usePathname, useRouter } from "next/navigation";
 import { BoardState, Task } from "@/lib/types";
 import { createClient } from "@/lib/supabase/client";
+import { useToast } from "./ToastContext";
 import type { Database } from "@/lib/supabase/database.types";
 import {
   ensureBootstrap,
@@ -102,12 +103,6 @@ import type { Json } from "@/lib/supabase/database.types";
 const EMPTY_STATE: BoardState = { tasks: {}, columns: [] };
 const COLUMN_COLOR_CYCLE = ["--low", "--medium", "--accent", "--muted", "--high"];
 
-export interface Toast {
-  id: string;
-  message: string;
-  tone: "error" | "success";
-}
-
 interface BoardContextValue {
   supabase: SupabaseClient<Database>;
   userId: string | null;
@@ -189,8 +184,6 @@ interface BoardContextValue {
     isActive: boolean
   ) => Promise<{ ok: boolean; message: string }>;
   deleteIntegration: (integrationId: string) => Promise<{ ok: boolean; message: string }>;
-  toasts: Toast[];
-  dismissToast: (id: string) => void;
 }
 
 const BoardContext = createContext<BoardContextValue | null>(null);
@@ -236,41 +229,14 @@ export function BoardProvider({ children }: { children: ReactNode }) {
   const [marketplaceTemplates, setMarketplaceTemplates] = useState<MarketplaceTemplate[]>([]);
   const [ownTemplates, setOwnTemplates] = useState<OwnTemplate[]>([]);
   const [integrations, setIntegrations] = useState<Integration[]>([]);
-  const [toasts, setToasts] = useState<Toast[]>([]);
-  // Rastrea los timers de auto-descarte por id de toast, para poder
-  // cancelarlos si el usuario lo cierra a mano o el provider se desmonta
-  // antes de que se cumplan los 5s — sin esto, el timer huérfano igual
-  // dispara un setToasts sobre un toast que ya no existe.
-  const toastTimersRef = useRef<Record<string, ReturnType<typeof setTimeout>>>({});
-  useEffect(() => {
-    const timers = toastTimersRef.current;
-    return () => {
-      Object.values(timers).forEach(clearTimeout);
-    };
-  }, []);
-
-  // Feedback visible para fallos que antes solo iban a console.error: un
-  // fetch silencioso en loadForBoard, o una acción optimista (mover/editar
-  // tarea, etc.) que se revierte porque la llamada remota falló. Auto-
-  // descarta a los 5s; el usuario también puede cerrarlo a mano (ver
-  // dismissToast, expuesto en el contexto y usado por el stack en Shell).
-  const pushToast = useCallback((message: string, tone: Toast["tone"] = "error") => {
-    const id = crypto.randomUUID();
-    setToasts((prev) => [...prev, { id, message, tone }]);
-    toastTimersRef.current[id] = setTimeout(() => {
-      delete toastTimersRef.current[id];
-      setToasts((prev) => prev.filter((t) => t.id !== id));
-    }, 5000);
-  }, []);
-
-  const dismissToast = useCallback((id: string) => {
-    const timer = toastTimersRef.current[id];
-    if (timer) {
-      clearTimeout(timer);
-      delete toastTimersRef.current[id];
-    }
-    setToasts((prev) => prev.filter((t) => t.id !== id));
-  }, []);
+  // toasts/dismissToast ya no viven aquí — ver ToastContext.tsx
+  // (AUDITORIA_2026-09-03.md, hallazgo 11). pushToast sigue siendo el
+  // mecanismo de feedback para fallos que antes solo iban a console.error
+  // (un fetch silencioso en loadForBoard, o una acción optimista que se
+  // revierte porque la llamada remota falló), solo que ahora viene de un
+  // contexto separado para no forzar un re-render de todo useBoard() cada
+  // vez que un toast aparece o se auto-descarta.
+  const { pushToast } = useToast();
 
   // Contador monotónico para descartar respuestas de loadForBoard fuera de
   // orden (p.ej. doble click en switchWorkspace): solo la llamada más
@@ -1113,8 +1079,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       integrations,
       saveIntegration,
       deleteIntegration,
-      toasts,
-      dismissToast,
     }),
     [
       supabase,
@@ -1175,8 +1139,6 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       integrations,
       saveIntegration,
       deleteIntegration,
-      toasts,
-      dismissToast,
     ]
   );
 

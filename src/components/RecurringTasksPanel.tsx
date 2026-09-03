@@ -1,8 +1,7 @@
 "use client";
 
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
-import { useDialogA11y } from "@/hooks/useDialogA11y";
 import { priorityLabel, type Priority } from "@/lib/types";
 import {
   fetchRecurringTaskTemplates,
@@ -12,6 +11,8 @@ import {
   type RecurringTaskTemplate,
   type RecurrenceFrequency,
 } from "@/lib/supabase/recurring-tasks-repo";
+import AdminPanelShell from "./AdminPanelShell";
+import { useEmbeddedPanelData } from "@/hooks/useEmbeddedPanelData";
 
 interface RecurringTasksPanelProps {
   onClose: () => void;
@@ -26,12 +27,16 @@ const FREQUENCY_LABEL: Record<RecurrenceFrequency, string> = {
 
 export default function RecurringTasksPanel({ onClose, embedded = false }: RecurringTasksPanelProps) {
   const { supabase, activeBoardId, tenantId, userId, state, members } = useBoard();
-  const modalRef = useRef<HTMLDivElement>(null);
-  useDialogA11y(modalRef, onClose, !embedded);
 
+  const { data, loading, error, setError } = useEmbeddedPanelData<RecurringTaskTemplate[]>(
+    () => fetchRecurringTaskTemplates(supabase, activeBoardId!),
+    [supabase, activeBoardId],
+    { skip: !activeBoardId, errorMessage: "No se pudieron cargar las tareas recurrentes." }
+  );
   const [templates, setTemplates] = useState<RecurringTaskTemplate[]>([]);
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
+  useEffect(() => {
+    if (data) setTemplates(data);
+  }, [data]);
 
   const [title, setTitle] = useState("");
   const [columnId, setColumnId] = useState("");
@@ -41,25 +46,6 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
   const [intervalCount, setIntervalCount] = useState(1);
   const [startDate, setStartDate] = useState("");
   const [creating, setCreating] = useState(false);
-
-  useEffect(() => {
-    if (!activeBoardId) return;
-    let cancelled = false;
-    fetchRecurringTaskTemplates(supabase, activeBoardId)
-      .then((data) => {
-        if (!cancelled) setTemplates(data);
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar las tareas recurrentes:", err);
-        if (!cancelled) setError("No se pudieron cargar las tareas recurrentes.");
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [supabase, activeBoardId]);
 
   useEffect(() => {
     if (!columnId && state.columns.length > 0) setColumnId(state.columns[0].id);
@@ -118,8 +104,8 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
     return state.columns.find((c) => c.id === id)?.title ?? "—";
   }
 
-  const content = (
-    <>
+  return (
+    <AdminPanelShell embedded={embedded} onClose={onClose} title="Tareas recurrentes" width={640}>
       <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 0 }}>
         Crea una tarea nueva automáticamente de forma diaria, semanal o mensual — útil para checklists recurrentes,
         reportes periódicos, etc.
@@ -236,20 +222,6 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
           ))}
         </ul>
       )}
-    </>
-  );
-
-  if (embedded) return content;
-
-  return (
-    <div className="modal-backdrop">
-      <div ref={modalRef} className="modal" style={{ maxWidth: 640 }} role="dialog" aria-modal="true" aria-labelledby="rt-title-h">
-        <div className="modal-head">
-          <h2 id="rt-title-h">Tareas recurrentes</h2>
-          <button type="button" className="icon-btn" onClick={onClose} aria-label="Cerrar">✕</button>
-        </div>
-        <div className="modal-body">{content}</div>
-      </div>
-    </div>
+    </AdminPanelShell>
   );
 }
