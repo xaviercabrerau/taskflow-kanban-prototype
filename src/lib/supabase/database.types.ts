@@ -1064,6 +1064,88 @@ export type Database = {
           },
         ]
       }
+      recurring_task_templates: {
+        Row: {
+          active: boolean
+          assignee_user_id: string | null
+          board_id: string
+          column_id: string
+          created_at: string
+          created_by: string | null
+          day_of_month: number | null
+          day_of_week: number | null
+          description: string | null
+          frequency: string
+          id: string
+          interval_count: number
+          last_run_at: string | null
+          next_run_at: string
+          priority: string
+          tenant_id: string
+          title: string
+        }
+        Insert: {
+          active?: boolean
+          assignee_user_id?: string | null
+          board_id: string
+          column_id: string
+          created_at?: string
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description?: string | null
+          frequency: string
+          id?: string
+          interval_count?: number
+          last_run_at?: string | null
+          next_run_at: string
+          priority?: string
+          tenant_id: string
+          title: string
+        }
+        Update: {
+          active?: boolean
+          assignee_user_id?: string | null
+          board_id?: string
+          column_id?: string
+          created_at?: string
+          created_by?: string | null
+          day_of_month?: number | null
+          day_of_week?: number | null
+          description?: string | null
+          frequency?: string
+          id?: string
+          interval_count?: number
+          last_run_at?: string | null
+          next_run_at?: string
+          priority?: string
+          tenant_id?: string
+          title?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "recurring_task_templates_board_id_fkey"
+            columns: ["board_id"]
+            isOneToOne: false
+            referencedRelation: "boards"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_task_templates_column_id_fkey"
+            columns: ["column_id"]
+            isOneToOne: false
+            referencedRelation: "board_columns"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "recurring_task_templates_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       role_assignments: {
         Row: {
           created_at: string
@@ -1771,6 +1853,7 @@ export type Database = {
         }[]
       }
       execute_due_date_automations: { Args: never; Returns: undefined }
+      execute_recurring_tasks: { Args: never; Returns: undefined }
       execute_sla_automations: { Args: never; Returns: undefined }
       get_cron_health: {
         Args: never

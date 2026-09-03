@@ -30,6 +30,7 @@ const NAV_GROUPS: NavGroup[] = [
     label: "Producto",
     items: [
       { href: "/admin/planificacion", label: "Épicas y Sprints", icon: "🎯" },
+      { href: "/admin/tareas-recurrentes", label: "Tareas recurrentes", icon: "🔁" },
       { href: "/admin/automatizaciones", label: "Automatizaciones", icon: "⚡" },
       { href: "/admin/campos-personalizados", label: "Campos personalizados", icon: "🏷️" },
       { href: "/admin/plantillas", label: "Plantillas", icon: "🧩" },
@@ -45,6 +46,7 @@ const NAV_GROUPS: NavGroup[] = [
       { href: "/admin/seguridad", label: "Seguridad y acceso", icon: "🔐" },
       { href: "/admin/auditoria", label: "Auditoría", icon: "📜" },
       { href: "/admin/api-keys", label: "API Keys (MCP)", icon: "🔑" },
+      { href: "/admin/api-docs", label: "API pública", icon: "📘" },
     ],
   },
 ];

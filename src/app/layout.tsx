@@ -1,14 +1,24 @@
-import type { Metadata } from "next";
+import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { BoardProvider } from "@/context/BoardContext";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import MfaAalGate from "@/components/MfaAalGate";
 import MfaGate from "@/components/MfaGate";
+import ServiceWorkerRegister from "@/components/ServiceWorkerRegister";
 import "./globals.css";
 
 export const metadata: Metadata = {
   title: "TaskFlow — Kanban",
   description: "Prototipo funcional del tablero Kanban de TaskFlow",
+  manifest: "/manifest.webmanifest",
+  icons: {
+    icon: [{ url: "/icon-192.png", sizes: "192x192", type: "image/png" }],
+    apple: [{ url: "/apple-touch-icon.png", sizes: "180x180", type: "image/png" }],
+  },
+};
+
+export const viewport: Viewport = {
+  themeColor: "#0f8f82",
 };
 
 export default async function RootLayout({ children }: LayoutProps<"/">) {
@@ -37,6 +47,7 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
             resolver el paso de verificación en dos pasos, para que los
             datos del board nunca lleguen a memoria del cliente antes de
             que la sesión alcance el nivel de verificación requerido. */}
+        <ServiceWorkerRegister />
         <PasswordChangeGate>
           <MfaAalGate>
             <BoardProvider>
