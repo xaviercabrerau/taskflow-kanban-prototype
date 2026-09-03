@@ -37,6 +37,7 @@ import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
 import type { ShareLink, SharePermission } from "@/lib/supabase/share-links-repo";
 import { generateTempId } from "@/lib/tempId";
 import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
+import { fetchTaskGithubLinks, deleteTaskGithubLink, type TaskGithubLink } from "@/lib/supabase/github-links-repo";
 import { fetchEpics, type Epic } from "@/lib/supabase/epics-repo";
 import {
   fetchTaskTimeEntries,
@@ -116,6 +117,12 @@ export default function TaskModal({
 
   const [comments, setComments] = useState<TaskComment[]>([]);
   const [newComment, setNewComment] = useState("");
+  const [commentSummary, setCommentSummary] = useState<string | null>(null);
+  const [summarizing, setSummarizing] = useState(false);
+  const [summaryError, setSummaryError] = useState<string | null>(null);
+  const [aiText, setAiText] = useState("");
+  const [aiParsing, setAiParsing] = useState(false);
+  const [aiError, setAiError] = useState<string | null>(null);
   const [commentsLoading, setCommentsLoading] = useState(Boolean(taskId));
   const [commentsError, setCommentsError] = useState<string | null>(null);
   const [replyingToId, setReplyingToId] = useState<string | null>(null);
@@ -146,6 +153,10 @@ export default function TaskModal({
   const [timeError, setTimeError] = useState<string | null>(null);
 
   const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
+  const [githubLinks, setGithubLinks] = useState<TaskGithubLink[]>([]);
+  const [githubUrl, setGithubUrl] = useState("");
+  const [linkingGithub, setLinkingGithub] = useState(false);
+  const [githubError, setGithubError] = useState<string | null>(null);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [linkDirection, setLinkDirection] = useState<"blocked_by" | "blocks">("blocked_by");
   const [linkingBusy, setLinkingBusy] = useState(false);
@@ -338,6 +349,14 @@ export default function TaskModal({
       })
       .catch((err) => {
         console.error("No se pudieron cargar las dependencias:", err);
+      });
+
+    fetchTaskGithubLinks(supabase, taskId)
+      .then((links) => {
+        if (!cancelled) setGithubLinks(links);
+      })
+      .catch((err) => {
+        console.error("No se pudieron cargar los links de GitHub:", err);
       });
 
     fetch(`/api/share-links?boardId=${encodeURIComponent(activeBoardId ?? "")}`)
@@ -639,6 +658,52 @@ export default function TaskModal({
     }
   }
 
+  async function handleLinkGithub() {
+    if (!taskId || !githubUrl.trim() || linkingGithub) return;
+    setLinkingGithub(true);
+    setGithubError(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/github-link`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ url: githubUrl.trim() }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudo vincular el issue/PR.");
+      }
+      const link = json.link;
+      setGithubLinks((prev) => [
+        {
+          id: link.id,
+          taskId: link.task_id,
+          url: link.url,
+          repo: link.repo,
+          number: link.number,
+          kind: link.kind,
+          title: link.title,
+          state: link.state,
+          createdAt: link.created_at,
+        },
+        ...prev,
+      ]);
+      setGithubUrl("");
+    } catch (err) {
+      setGithubError(err instanceof Error ? err.message : "No se pudo vincular el issue/PR.");
+    } finally {
+      setLinkingGithub(false);
+    }
+  }
+
+  async function handleRemoveGithubLink(id: string) {
+    try {
+      await deleteTaskGithubLink(supabase, id);
+      setGithubLinks((prev) => prev.filter((l) => l.id !== id));
+    } catch (err) {
+      console.error("No se pudo quitar el link de GitHub:", err);
+    }
+  }
+
   async function handleCreateShareLink() {
     if (!taskId || !activeBoardId || creatingShare) return;
     setCreatingShare(true);
@@ -675,6 +740,49 @@ export default function TaskModal({
       }
     } catch (err) {
       console.error("No se pudo revocar el link:", err);
+    }
+  }
+
+  async function handleAiParse() {
+    if (!aiText.trim() || !tenantId || aiParsing) return;
+    setAiParsing(true);
+    setAiError(null);
+    try {
+      const res = await fetch("/api/tasks/parse-natural-language", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ text: aiText.trim(), tenantId }),
+      });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudo interpretar el texto.");
+      }
+      setTitle(json.title);
+      setPriority(json.priority);
+      if (json.dueDate) setDueDate(json.dueDate);
+      setAiText("");
+    } catch (err) {
+      setAiError(err instanceof Error ? err.message : "No se pudo interpretar el texto.");
+    } finally {
+      setAiParsing(false);
+    }
+  }
+
+  async function handleSummarizeComments() {
+    if (!taskId || summarizing) return;
+    setSummarizing(true);
+    setSummaryError(null);
+    try {
+      const res = await fetch(`/api/tasks/${taskId}/summarize-comments`, { method: "POST" });
+      const json = await res.json();
+      if (!res.ok) {
+        throw new Error(json.error || "No se pudo generar el resumen.");
+      }
+      setCommentSummary(json.summary);
+    } catch (err) {
+      setSummaryError(err instanceof Error ? err.message : "No se pudo generar el resumen.");
+    } finally {
+      setSummarizing(false);
     }
   }
 
@@ -968,6 +1076,34 @@ export default function TaskModal({
           </button>
         </div>
         <div className="modal-body">
+          {mode === "create" && (
+            <div className="field">
+              <label htmlFor="ai-quick-add">✨ Crear con IA (opcional)</label>
+              <div style={{ display: "flex", gap: 8 }}>
+                <input
+                  id="ai-quick-add"
+                  value={aiText}
+                  onChange={(e) => setAiText(e.target.value)}
+                  placeholder='ej. "Enviar propuesta al cliente el viernes, es urgente"'
+                  disabled={aiParsing}
+                  onKeyDown={(e) => {
+                    if (e.key === "Enter") {
+                      e.preventDefault();
+                      handleAiParse();
+                    }
+                  }}
+                />
+                <button type="button" className="btn" onClick={handleAiParse} disabled={aiParsing || !aiText.trim()}>
+                  {aiParsing ? "…" : "Interpretar"}
+                </button>
+              </div>
+              {aiError && (
+                <p role="alert" className="field-error">
+                  {aiError}
+                </p>
+              )}
+            </div>
+          )}
           <div className="field">
             <label htmlFor="title">Título</label>
             <input
@@ -1677,6 +1813,46 @@ export default function TaskModal({
 
               {taskId && (
                 <div className="field task-section">
+                  <label>GitHub</label>
+                  {githubLinks.length > 0 && (
+                    <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "flex", flexDirection: "column", gap: 6 }}>
+                      {githubLinks.map((l) => (
+                        <li key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
+                          <span>
+                            {l.kind === "pull_request" ? "🔀" : "◯"} {l.repo}#{l.number} — {l.title}{" "}
+                            <span style={{ color: "var(--muted)" }}>({l.state})</span>
+                          </span>
+                          <a href={l.url} target="_blank" rel="noopener noreferrer" className="btn">
+                            Ver
+                          </a>
+                          <button type="button" className="btn" onClick={() => handleRemoveGithubLink(l.id)}>
+                            Quitar
+                          </button>
+                        </li>
+                      ))}
+                    </ul>
+                  )}
+                  <div style={{ display: "flex", gap: 8 }}>
+                    <input
+                      value={githubUrl}
+                      onChange={(e) => setGithubUrl(e.target.value)}
+                      placeholder="https://github.com/owner/repo/issues/123"
+                      disabled={linkingGithub}
+                    />
+                    <button type="button" className="btn" onClick={handleLinkGithub} disabled={linkingGithub || !githubUrl.trim()}>
+                      {linkingGithub ? "Vinculando…" : "Vincular"}
+                    </button>
+                  </div>
+                  {githubError && (
+                    <p role="alert" className="field-error">
+                      {githubError}
+                    </p>
+                  )}
+                </div>
+              )}
+
+              {taskId && (
+                <div className="field task-section">
                   <label>Compartir</label>
                   {shareLinks.length > 0 && (
                     <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "flex", flexDirection: "column", gap: 6 }}>
@@ -1764,7 +1940,24 @@ export default function TaskModal({
               </div>
 
               <div className="field task-section">
-                <label>Comentarios</label>
+                <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
+                  <label style={{ margin: 0 }}>Comentarios</label>
+                  {taskId && comments.length > 0 && (
+                    <button type="button" className="btn" onClick={handleSummarizeComments} disabled={summarizing}>
+                      {summarizing ? "Resumiendo…" : "✨ Resumir con IA"}
+                    </button>
+                  )}
+                </div>
+                {summaryError && (
+                  <p role="alert" className="field-error">
+                    {summaryError}
+                  </p>
+                )}
+                {commentSummary && (
+                  <p style={{ fontSize: 13, background: "var(--accent-soft)", borderRadius: 8, padding: "8px 10px", margin: "8px 0" }}>
+                    {commentSummary}
+                  </p>
+                )}
                 {commentsError ? <p role="alert" className="field-error">{commentsError}</p> : null}
                 {commentsLoading ? (
                   <p>Cargando comentarios…</p>

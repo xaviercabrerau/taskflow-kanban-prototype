@@ -1378,6 +1378,63 @@ export type Database = {
           },
         ]
       }
+      task_github_links: {
+        Row: {
+          created_at: string
+          created_by: string | null
+          id: string
+          kind: string
+          number: number
+          repo: string
+          state: string
+          task_id: string
+          tenant_id: string
+          title: string
+          url: string
+        }
+        Insert: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind: string
+          number: number
+          repo: string
+          state: string
+          task_id: string
+          tenant_id: string
+          title: string
+          url: string
+        }
+        Update: {
+          created_at?: string
+          created_by?: string | null
+          id?: string
+          kind?: string
+          number?: number
+          repo?: string
+          state?: string
+          task_id?: string
+          tenant_id?: string
+          title?: string
+          url?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "task_github_links_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "task_github_links_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       task_links: {
         Row: {
           id: string
@@ -1855,6 +1912,13 @@ export type Database = {
       execute_due_date_automations: { Args: never; Returns: undefined }
       execute_recurring_tasks: { Args: never; Returns: undefined }
       execute_sla_automations: { Args: never; Returns: undefined }
+      get_ai_credential: {
+        Args: { p_tenant_id: string }
+        Returns: {
+          api_key: string
+          provider: string
+        }[]
+      }
       get_cron_health: {
         Args: never
         Returns: {
@@ -1865,6 +1929,7 @@ export type Database = {
           last_status: string
         }[]
       }
+      get_github_token: { Args: { p_tenant_id: string }; Returns: string }
       get_google_refresh_token: {
         Args: { p_tenant_id: string }
         Returns: string
