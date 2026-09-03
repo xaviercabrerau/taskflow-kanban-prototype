@@ -1259,6 +1259,7 @@ export type Database = {
           assignee_name: string | null
           assignee_user_id: string | null
           board_id: string
+          column_entered_at: string
           column_id: string
           created_at: string
           created_by: string | null
@@ -1286,6 +1287,7 @@ export type Database = {
           assignee_name?: string | null
           assignee_user_id?: string | null
           board_id: string
+          column_entered_at?: string
           column_id: string
           created_at?: string
           created_by?: string | null
@@ -1313,6 +1315,7 @@ export type Database = {
           assignee_name?: string | null
           assignee_user_id?: string | null
           board_id?: string
+          column_entered_at?: string
           column_id?: string
           created_at?: string
           created_by?: string | null
@@ -1601,6 +1604,7 @@ export type Database = {
         }
       }
       execute_due_date_automations: { Args: never; Returns: undefined }
+      execute_sla_automations: { Args: never; Returns: undefined }
       get_cron_health: {
         Args: never
         Returns: {

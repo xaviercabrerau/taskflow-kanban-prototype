@@ -36,6 +36,7 @@ import type { Database } from "@/lib/supabase/database.types";
 const MONITORED_JOBS = [
   { name: "taskflow_check_due_soon_tasks", schedule: "hourly" },
   { name: "taskflow_execute_due_date_automations", schedule: "hourly" },
+  { name: "taskflow_execute_sla_automations", schedule: "hourly" },
   { name: "purge-expired-audit-logs", schedule: "daily" },
   { name: "record-daily-metrics-snapshots", schedule: "daily" },
 ] as const;

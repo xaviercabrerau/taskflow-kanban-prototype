@@ -6,7 +6,8 @@ type TypedClient = SupabaseClient<Database>;
 export type AutomationTrigger =
   | { type: "task_created" }
   | { type: "status_changed"; to_column_id?: string }
-  | { type: "due_date_approaching"; days_before: number };
+  | { type: "due_date_approaching"; days_before: number }
+  | { type: "sla_stale"; hours: number };
 
 export type AutomationAction =
   | { type: "move_to_column"; column_id: string }
@@ -33,7 +34,7 @@ export interface AutomationRule {
   createdAt: string;
 }
 
-const TRIGGER_TYPES = new Set(["task_created", "status_changed", "due_date_approaching"]);
+const TRIGGER_TYPES = new Set(["task_created", "status_changed", "due_date_approaching", "sla_stale"]);
 const ACTION_TYPES = new Set(["move_to_column", "set_field", "add_comment", "webhook"]);
 const CONDITION_FIELDS = new Set<AutomationConditionField>(["priority", "tag", "assignee_name", "title"]);
 const CONDITION_OPERATORS = new Set<AutomationConditionOperator>(["eq", "neq", "contains"]);

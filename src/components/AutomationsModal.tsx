@@ -16,7 +16,7 @@ interface AutomationsModalProps {
   embedded?: boolean;
 }
 
-type TriggerKind = "task_created" | "status_changed" | "due_date_approaching";
+type TriggerKind = "task_created" | "status_changed" | "due_date_approaching" | "sla_stale";
 type ActionKind = "move_to_column" | "set_field" | "add_comment" | "webhook";
 
 const CONDITION_FIELD_LABEL: Record<AutomationConditionField, string> = {
@@ -41,6 +41,9 @@ function describeTrigger(trigger: AutomationTrigger, columnLabelById: Record<str
   if (trigger.type === "status_changed") {
     const label = trigger.to_column_id ? columnLabelById[trigger.to_column_id] ?? trigger.to_column_id : "cualquier columna";
     return `Cuando la tarea se mueve a "${label}"`;
+  }
+  if (trigger.type === "sla_stale") {
+    return `Cuando una tarea lleva más de ${trigger.hours}h sin moverse`;
   }
   return `Cuando el vencimiento está a ${trigger.days_before} día(s)`;
 }
@@ -96,6 +99,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
   const [triggerKind, setTriggerKind] = useState<TriggerKind>("task_created");
   const [triggerColumnId, setTriggerColumnId] = useState(state.columns[0]?.id ?? "");
   const [daysBefore, setDaysBefore] = useState(2);
+  const [staleHours, setStaleHours] = useState(24);
   const [actions, setActions] = useState<{ id: number; action: AutomationAction }[]>([]);
   const actionIdRef = useRef(0);
   const [actionKind, setActionKind] = useState<ActionKind>("move_to_column");
@@ -130,6 +134,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
   function buildTrigger(): AutomationTrigger {
     if (triggerKind === "task_created") return { type: "task_created" };
     if (triggerKind === "status_changed") return { type: "status_changed", to_column_id: triggerColumnId || undefined };
+    if (triggerKind === "sla_stale") return { type: "sla_stale", hours: staleHours };
     return { type: "due_date_approaching", days_before: daysBefore };
   }
 
@@ -272,6 +277,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
                   <option value="task_created">Tarea creada</option>
                   <option value="status_changed">Tarea movida a columna</option>
                   <option value="due_date_approaching">Vencimiento próximo</option>
+                  <option value="sla_stale">Tarea estancada (SLA)</option>
                 </select>
               </div>
 
@@ -297,6 +303,19 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
                     min={1}
                     value={daysBefore}
                     onChange={(e) => setDaysBefore(Number(e.target.value))}
+                  />
+                </div>
+              )}
+
+              {triggerKind === "sla_stale" && (
+                <div className="field" style={{ marginTop: 8 }}>
+                  <label htmlFor="trigger-stale-hours">Horas sin moverse (en cualquier columna que no sea "Hecho")</label>
+                  <input
+                    id="trigger-stale-hours"
+                    type="number"
+                    min={1}
+                    value={staleHours}
+                    onChange={(e) => setStaleHours(Number(e.target.value))}
                   />
                 </div>
               )}
