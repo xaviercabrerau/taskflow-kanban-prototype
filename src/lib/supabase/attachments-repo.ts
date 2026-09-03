@@ -5,6 +5,28 @@ type TypedClient = SupabaseClient<Database>;
 
 const BUCKET = "task-attachments";
 
+// El mime_type del cliente (file.type) es controlable por el usuario, no una
+// garantía real del contenido — esta allowlist es defensa superficial (evita
+// que un archivo se guarde/sirva como text/html o image/svg+xml, que un
+// navegador podría renderizar), no una inspección de magic bytes. Se combina
+// con `download: true` en getAttachmentSignedUrl para que el navegador nunca
+// renderice el contenido inline (hallazgo de la revisión de seguridad
+// avanzada, 2026-09-03).
+const ALLOWED_MIME_TYPES = new Set([
+  "image/png",
+  "image/jpeg",
+  "image/gif",
+  "image/webp",
+  "application/pdf",
+  "text/plain",
+  "text/csv",
+  "application/msword",
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+  "application/vnd.ms-excel",
+  "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+  "application/zip",
+]);
+
 export interface TaskAttachment {
   id: string;
   taskId: string;
@@ -57,9 +79,14 @@ export async function uploadAttachment(
   file: File,
   uploadedBy: string | null
 ): Promise<TaskAttachment> {
+  if (file.type && !ALLOWED_MIME_TYPES.has(file.type)) {
+    throw new Error(`Tipo de archivo no permitido: ${file.type}`);
+  }
+
   const storagePath = `${tenantId}/${taskId}/${file.name}`;
   const { error: uploadError } = await supabase.storage.from(BUCKET).upload(storagePath, file, {
     upsert: true,
+    contentType: file.type || "application/octet-stream",
   });
   if (uploadError) throw uploadError;
 
@@ -107,7 +134,10 @@ export async function deleteAttachment(
 // Signed URL de corta duración (60s) para descargar/ver el archivo — el bucket
 // es privado, no hay URL pública directa.
 export async function getAttachmentSignedUrl(supabase: TypedClient, storagePath: string): Promise<string> {
-  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 60);
+  // `download: true` fuerza Content-Disposition: attachment — el navegador
+  // nunca renderiza el contenido inline, aunque el mime_type almacenado
+  // mienta (defensa en profundidad junto con ALLOWED_MIME_TYPES arriba).
+  const { data, error } = await supabase.storage.from(BUCKET).createSignedUrl(storagePath, 60, { download: true });
   if (error) throw error;
   return data.signedUrl;
 }

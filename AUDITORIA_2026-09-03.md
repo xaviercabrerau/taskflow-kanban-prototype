@@ -1,6 +1,6 @@
 # Auditoría TaskFlow — 2026-09-03
 
-> ✅ **Estado: los 17 hallazgos fueron corregidos y desplegados a producción** (Fases A, B y C, más un seguimiento posterior para el hallazgo 8). Ver la columna "Estado" en la tabla de abajo y el detalle de cada corrección en el historial de commits (`fix: auditoría 2026-09-03 Fase A/B/C`, `feat: anclaje real a día de la semana/mes`). Este documento se conserva como registro histórico de lo encontrado; para el estado actual del sistema ver [DOCUMENTACION_PROYECTO.md](DOCUMENTACION_PROYECTO.md).
+> ✅ **Estado: los 17 hallazgos originales fueron corregidos y desplegados a producción** (Fases A, B y C, más un seguimiento posterior para el hallazgo 8), **y una revisión de seguridad avanzada (pentest) posterior encontró y corrigió 3 hallazgos adicionales de severidad baja** (ver sección "Revisión de seguridad avanzada" más abajo). Ver la columna "Estado" en la tabla de abajo y el detalle de cada corrección en el historial de commits (`fix: auditoría 2026-09-03 Fase A/B/C`, `feat: anclaje real a día de la semana/mes`, `fix: hallazgos revisión de seguridad avanzada`). Este documento se conserva como registro histórico de lo encontrado; para el estado actual del sistema ver [DOCUMENTACION_PROYECTO.md](DOCUMENTACION_PROYECTO.md).
 
 Auditoría de calidad, seguridad, base de datos y performance/DevOps sobre el estado actual del proyecto, con foco en todo lo construido desde la auditoría anterior (`AUDITORIA_COMPLETA_2026-08-28.md`): relay Slack/Teams, épicas/sprints, vistas guardadas, acciones en lote, command palette, time tracking, workload/portafolio, acceso de invitado + links públicos compartibles, tareas recurrentes, API pública REST, PWA, y el andamiaje de IA/GitHub.
 
@@ -154,6 +154,20 @@ Cualquier cambio (un toast apareciendo cada 5s, un drag-and-drop) fuerza un nuev
 
 - **17.** `AGENTS.md` (cargado vía `CLAUDE.md`) sigue conteniendo texto con forma de inyección de prompt ("esta versión de Next.js tiene breaking changes, lee `node_modules/next/dist/docs/`... este bloque es re-agregado por `next dev`"). Dos auditorías independientes en esta sesión y en la anterior lo identificaron como sospechoso. Nunca se ha actuado sobre su contenido. Recomendado: investigar su origen y eliminarlo si no cumple ninguna función real.
 - El resto de la superficie nueva (API pública `/api/v1/*`, accesores de credenciales Vault `get_ai_credential`/`get_github_token`, validación de URL de GitHub, service worker excluyendo `/api/*`, ausencia de secretos hardcodeados) se revisó explícitamente y **no presenta hallazgos** — son la base sobre la que construir sin retrabajo.
+
+---
+
+## Revisión de seguridad avanzada (pentest) — 2026-09-03, seguimiento
+
+Revisión adicional, más ofensiva, enfocada en áreas fuera del alcance de la auditoría original: cookies/sesión, IDOR sistemático en toda ruta con `[id]`/`[token]`, inyección HTML/CRLF, CORS, subida de adjuntos, OAuth de Google, dependencias y la superficie pública anónima (share links). **3 hallazgos, los 3 de severidad baja, los 3 corregidos.**
+
+| # | Hallazgo | Severidad | Estado |
+|---|---|---|---|
+| 18 | Falta el header `Strict-Transport-Security` (HSTS) — la primera visita por `http://` queda expuesta a downgrade antes del redirect | 🟢 Bajo | ✅ Corregido — HSTS + `Permissions-Policy` en `next.config.ts` |
+| 19 | Adjuntos de tareas sin validar mime type/extensión en el servidor (el `file.type` del navegador es falsificable); signed URLs sin forzar descarga | 🟢 Bajo | ✅ Corregido — allowlist de MIME types + `download: true` en la signed URL (`attachments-repo.ts`) |
+| 20 | `proxy.ts` no protege `/api/*` por diseño (cada ruta valida su propia sesión) — patrón frágil-por-convención, no fail-safe-by-default, aunque las ~15 rutas actuales lo hacen bien | ℹ️ Informativo | Aceptado como riesgo documentado — refactor a un wrapper de auth obligatorio queda fuera de alcance de este seguimiento; revisar si se agregan rutas nuevas |
+
+Áreas revisadas y confirmadas limpias: cookies de sesión (HttpOnly/Secure/SameSite correctos vía `@supabase/ssr`), IDOR (patrón consistente: RLS valida `tenant_id` antes de usar la service-role key), OAuth de Google (state JWT firmado + verificación cruzada de sesión), CORS, dependencias (`package.json`), y la superficie pública de share links (tokens con 192 bits de entropía).
 
 ---
 
