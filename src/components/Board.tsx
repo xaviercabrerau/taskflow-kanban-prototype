@@ -48,6 +48,11 @@ export default function Board() {
   const [savingView, setSavingView] = useState(false);
   const [newViewName, setNewViewName] = useState("");
   const [showSaveViewForm, setShowSaveViewForm] = useState(false);
+  const [selectedTaskIds, setSelectedTaskIds] = useState<Set<string>>(new Set());
+  const [bulkColumnId, setBulkColumnId] = useState("");
+  const [bulkAssigneeLabel, setBulkAssigneeLabel] = useState("");
+  const [bulkTag, setBulkTag] = useState("");
+  const [bulkBusy, setBulkBusy] = useState(false);
   const [addingColumn, setAddingColumn] = useState(false);
   const [newColumnName, setNewColumnName] = useState("");
   const [columnError, setColumnError] = useState<string | null>(null);
@@ -176,6 +181,68 @@ export default function Board() {
   }
 
   const availableTags = Array.from(new Set(Object.values(state.tasks).map((t) => t.tag).filter((t): t is string => Boolean(t)))).sort();
+
+  function toggleSelect(taskId: string) {
+    setSelectedTaskIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(taskId)) next.delete(taskId);
+      else next.add(taskId);
+      return next;
+    });
+  }
+
+  function clearSelection() {
+    setSelectedTaskIds(new Set());
+    setBulkColumnId("");
+    setBulkAssigneeLabel("");
+    setBulkTag("");
+  }
+
+  async function handleBulkMove() {
+    if (!bulkColumnId || selectedTaskIds.size === 0 || bulkBusy) return;
+    setBulkBusy(true);
+    try {
+      const destLen = state.columns.find((c) => c.id === bulkColumnId)?.taskIds.length ?? 0;
+      let offset = 0;
+      for (const taskId of selectedTaskIds) {
+        moveTask(taskId, bulkColumnId, destLen + offset);
+        offset++;
+      }
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
+    }
+  }
+
+  function handleBulkAssign() {
+    if (!bulkAssigneeLabel || selectedTaskIds.size === 0 || bulkBusy) return;
+    const member = members.find((m) => (m.fullName || m.email || m.userId) === bulkAssigneeLabel);
+    for (const taskId of selectedTaskIds) {
+      const task = state.tasks[taskId];
+      if (!task) continue;
+      updateTask({ ...task, assignee: bulkAssigneeLabel, assigneeUserId: member?.userId ?? null });
+    }
+    clearSelection();
+  }
+
+  function handleBulkTag() {
+    if (selectedTaskIds.size === 0 || bulkBusy) return;
+    for (const taskId of selectedTaskIds) {
+      const task = state.tasks[taskId];
+      if (!task) continue;
+      updateTask({ ...task, tag: bulkTag.trim() || undefined });
+    }
+    clearSelection();
+  }
+
+  function handleBulkDelete() {
+    if (selectedTaskIds.size === 0) return;
+    if (!window.confirm(`¿Eliminar ${selectedTaskIds.size} tarea(s)? Esta acción no se puede deshacer.`)) return;
+    for (const taskId of selectedTaskIds) {
+      deleteTask(taskId);
+    }
+    clearSelection();
+  }
 
   const sensors = useSensors(
     useSensor(PointerSensor, { activationConstraint: { distance: 4 } }),
@@ -368,7 +435,55 @@ export default function Board() {
               </button>
             </>
           )}
+          <span style={{ fontSize: 11.5, color: "var(--muted)" }}>⌘/Ctrl + clic para seleccionar varias tareas</span>
         </div>
+
+        {selectedTaskIds.size > 0 && (
+          <div className="assignee-filter" role="toolbar" aria-label="Acciones en lote">
+            <span style={{ fontWeight: 700, fontSize: 12.5 }}>{selectedTaskIds.size} seleccionada(s)</span>
+            <label>
+              Mover a
+              <select value={bulkColumnId} onChange={(e) => setBulkColumnId(e.target.value)}>
+                <option value="">Elegir columna…</option>
+                {state.columns.map((c) => (
+                  <option key={c.id} value={c.id}>
+                    {c.title}
+                  </option>
+                ))}
+              </select>
+            </label>
+            <button type="button" className="btn" onClick={handleBulkMove} disabled={!bulkColumnId || bulkBusy}>
+              Mover
+            </button>
+            <label>
+              Asignar a
+              <select value={bulkAssigneeLabel} onChange={(e) => setBulkAssigneeLabel(e.target.value)}>
+                <option value="">Elegir persona…</option>
+                {members.map((m) => {
+                  const label = m.fullName || m.email || m.userId;
+                  return (
+                    <option key={m.membershipId} value={label}>
+                      {label}
+                    </option>
+                  );
+                })}
+              </select>
+            </label>
+            <button type="button" className="btn" onClick={handleBulkAssign} disabled={!bulkAssigneeLabel || bulkBusy}>
+              Asignar
+            </button>
+            <input value={bulkTag} onChange={(e) => setBulkTag(e.target.value)} placeholder="Etiqueta" style={{ width: 110 }} />
+            <button type="button" className="btn" onClick={handleBulkTag} disabled={bulkBusy}>
+              Etiquetar
+            </button>
+            <button type="button" className="btn danger" onClick={handleBulkDelete}>
+              Eliminar
+            </button>
+            <button type="button" className="btn" onClick={clearSelection}>
+              Cancelar
+            </button>
+          </div>
+        )}
 
         <div className="board" onMouseMove={handleBoardMouseMove} onMouseLeave={clear}>
           {state.columns.map((col) => (
@@ -378,6 +493,8 @@ export default function Board() {
               tasks={tasksByColumn.get(col.id) ?? []}
               onOpenTask={handleOpenTask}
               onAddTask={handleAddTask}
+              selectedTaskIds={selectedTaskIds}
+              onToggleSelect={toggleSelect}
             />
           ))}
           {can("board.manage") && (

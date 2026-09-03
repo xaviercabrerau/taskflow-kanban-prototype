@@ -9,9 +9,11 @@ interface TaskCardProps {
   task: Task;
   columnId: string;
   onOpen: (task: Task) => void;
+  selected?: boolean;
+  onToggleSelect?: (taskId: string) => void;
 }
 
-function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
+function TaskCard({ task, columnId, onOpen, selected = false, onToggleSelect }: TaskCardProps) {
   const { attributes, listeners, setNodeRef, setActivatorNodeRef, transform, transition, isDragging } = useSortable({
     id: task.id,
     data: { columnId },
@@ -28,8 +30,14 @@ function TaskCard({ task, columnId, onOpen }: TaskCardProps) {
     <div
       ref={setNodeRef}
       style={style}
-      className={`card p-${task.priority}${isDragging ? " dragging" : ""}`}
-      onClick={() => onOpen(task)}
+      className={`card p-${task.priority}${isDragging ? " dragging" : ""}${selected ? " selected" : ""}`}
+      onClick={(e) => {
+        if ((e.metaKey || e.ctrlKey) && onToggleSelect) {
+          onToggleSelect(task.id);
+          return;
+        }
+        onOpen(task);
+      }}
       role="button"
       tabIndex={0}
       onKeyDown={(e) => {

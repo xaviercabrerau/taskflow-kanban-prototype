@@ -12,9 +12,11 @@ interface ColumnProps {
   tasks: Task[];
   onOpenTask: (task: Task) => void;
   onAddTask: (columnId: string) => void;
+  selectedTaskIds?: Set<string>;
+  onToggleSelect?: (taskId: string) => void;
 }
 
-function Column({ column, tasks, onOpenTask, onAddTask }: ColumnProps) {
+function Column({ column, tasks, onOpenTask, onAddTask, selectedTaskIds, onToggleSelect }: ColumnProps) {
   const { setNodeRef, isOver } = useDroppable({ id: column.id, data: { columnId: column.id } });
   const { can } = useBoard();
 
@@ -33,7 +35,14 @@ function Column({ column, tasks, onOpenTask, onAddTask }: ColumnProps) {
             arrastrar queda mal calculado. */}
         <SortableContext items={tasks.map((t) => t.id)} strategy={verticalListSortingStrategy}>
           {tasks.map((task) => (
-            <TaskCard key={task.id} task={task} columnId={column.id} onOpen={onOpenTask} />
+            <TaskCard
+              key={task.id}
+              task={task}
+              columnId={column.id}
+              onOpen={onOpenTask}
+              selected={selectedTaskIds?.has(task.id)}
+              onToggleSelect={onToggleSelect}
+            />
           ))}
         </SortableContext>
       </div>
