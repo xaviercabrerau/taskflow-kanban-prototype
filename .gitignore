@@ -2,6 +2,10 @@
 
 # dependencies
 /node_modules
+# node_modules anidados (ej. pitch-deck/pptx-build) — el patrón de arriba
+# solo cubre la raíz del repo (hallazgo de la revisión de seguridad de
+# 2026-09-04; confirmado que nada de esto se había commiteado nunca)
+**/node_modules
 /.pnp
 .pnp.*
 .yarn/*

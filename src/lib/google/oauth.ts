@@ -51,7 +51,11 @@ export function buildOAuthState(tenantId: string, userId: string): string {
 export function verifyOAuthState(state: string): { tenantId: string; userId: string } {
   const secret = process.env.JWT_SECRET;
   if (!secret) throw new Error("JWT_SECRET no está configurado.");
-  const decoded = jwt.verify(state, secret) as { tenantId: string; userId: string };
+  // algorithms explícito: defensa en profundidad (hallazgo de la revisión
+  // de seguridad de 2026-09-04) — el secreto simétrico ya impide confusión
+  // de algoritmo en la práctica, pero no depender de eso si el código
+  // cambia a una clave asimétrica en el futuro.
+  const decoded = jwt.verify(state, secret, { algorithms: ["HS256"] }) as { tenantId: string; userId: string };
   if (!decoded.tenantId || !decoded.userId) {
     throw new Error("Parámetro state inválido.");
   }

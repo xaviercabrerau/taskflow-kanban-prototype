@@ -181,23 +181,34 @@ export default function Board() {
     }
   }
 
-  const availableTags = Array.from(new Set(Object.values(state.tasks).map((t) => t.tag).filter((t): t is string => Boolean(t)))).sort();
+  // Memoizado como el resto de valores derivados de state.tasks en este
+  // archivo (tasksByColumn, accessibility) — sin esto se recalculaba en
+  // cada render, incluida cada tecla en el buscador (hallazgo de la
+  // revisión de calidad de código, 2026-09-04).
+  const availableTags = useMemo(
+    () => Array.from(new Set(Object.values(state.tasks).map((t) => t.tag).filter((t): t is string => Boolean(t)))).sort(),
+    [state.tasks]
+  );
 
-  function toggleSelect(taskId: string) {
+  // useCallback: se pasan a Column/TaskCard, ambos memo() — sin esto, cada
+  // render de Board (ej. cada tecla del buscador) les daba una referencia
+  // nueva y anulaba el memo de todo el tablero (mismo motivo por el que
+  // handleOpenTask/handleAddTask ya lo usan).
+  const toggleSelect = useCallback((taskId: string) => {
     setSelectedTaskIds((prev) => {
       const next = new Set(prev);
       if (next.has(taskId)) next.delete(taskId);
       else next.add(taskId);
       return next;
     });
-  }
+  }, []);
 
-  function clearSelection() {
+  const clearSelection = useCallback(() => {
     setSelectedTaskIds(new Set());
     setBulkColumnId("");
     setBulkAssigneeLabel("");
     setBulkTag("");
-  }
+  }, []);
 
   async function handleBulkMove() {
     if (!bulkColumnId || selectedTaskIds.size === 0 || bulkBusy) return;

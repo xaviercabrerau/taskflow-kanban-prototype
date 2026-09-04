@@ -16,7 +16,9 @@ const securityHeaders = [
 ];
 
 const nextConfig: NextConfig = {
-  /* config options here */
+  // Evita el header X-Powered-By: Next.js (fingerprinting menor, confirmado
+  // presente en producción en la revisión de seguridad de 2026-09-04).
+  poweredByHeader: false,
   async headers() {
     return [
       {
