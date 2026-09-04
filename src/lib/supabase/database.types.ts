@@ -1515,6 +1515,7 @@ export type Database = {
           due_date: string | null
           due_soon_notified_at: string | null
           epic_id: string | null
+          external_ticket_id: string | null
           id: string
           meet_event_id: string | null
           meet_link: string | null
@@ -1525,6 +1526,7 @@ export type Database = {
           sprint_id: string | null
           start_date: string | null
           story_points: number | null
+          synced_from_crm_at: string | null
           tag: string | null
           tenant_id: string
           title: string
@@ -1543,6 +1545,7 @@ export type Database = {
           due_date?: string | null
           due_soon_notified_at?: string | null
           epic_id?: string | null
+          external_ticket_id?: string | null
           id?: string
           meet_event_id?: string | null
           meet_link?: string | null
@@ -1553,6 +1556,7 @@ export type Database = {
           sprint_id?: string | null
           start_date?: string | null
           story_points?: number | null
+          synced_from_crm_at?: string | null
           tag?: string | null
           tenant_id: string
           title: string
@@ -1571,6 +1575,7 @@ export type Database = {
           due_date?: string | null
           due_soon_notified_at?: string | null
           epic_id?: string | null
+          external_ticket_id?: string | null
           id?: string
           meet_event_id?: string | null
           meet_link?: string | null
@@ -1581,6 +1586,7 @@ export type Database = {
           sprint_id?: string | null
           start_date?: string | null
           story_points?: number | null
+          synced_from_crm_at?: string | null
           tag?: string | null
           tenant_id?: string
           title?: string
@@ -1950,6 +1956,7 @@ export type Database = {
         Args: {
           p_description?: string
           p_due_date?: string
+          p_external_ticket_id?: string
           p_priority?: string
           p_title: string
           p_token: string
