@@ -3,6 +3,7 @@
 import { useEffect, useRef, useState } from "react";
 import { ColumnData, Priority, Task, dueBadge } from "@/lib/types";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import { fetchComments, addComment, type TaskComment } from "@/lib/supabase/comments-repo";
 import type { OrgMember } from "@/lib/supabase/members-repo";
@@ -86,7 +87,8 @@ export default function TaskModal({
   onDelete,
   onOpenTask,
 }: TaskModalProps) {
-  const { can, supabase, userId, tenantId, members, integrations, state, addTask, activeBoardId } = useBoard();
+  const { can, supabase, userId, tenantId, members, state, addTask, activeBoardId } = useBoard();
+  const { integrations } = useAdminData();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? "medium");
   const [assignee, setAssignee] = useState(initial?.assignee ?? "");

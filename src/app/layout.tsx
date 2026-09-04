@@ -1,6 +1,7 @@
 import type { Metadata, Viewport } from "next";
 import { headers } from "next/headers";
 import { BoardProvider } from "@/context/BoardContext";
+import { AdminDataProvider } from "@/context/AdminDataContext";
 import { ToastProvider } from "@/context/ToastContext";
 import PasswordChangeGate from "@/components/PasswordChangeGate";
 import MfaAalGate from "@/components/MfaAalGate";
@@ -56,7 +57,9 @@ export default async function RootLayout({ children }: LayoutProps<"/">) {
           <PasswordChangeGate>
             <MfaAalGate>
               <BoardProvider>
-                <MfaGate>{children}</MfaGate>
+                <AdminDataProvider>
+                  <MfaGate>{children}</MfaGate>
+                </AdminDataProvider>
               </BoardProvider>
             </MfaAalGate>
           </PasswordChangeGate>

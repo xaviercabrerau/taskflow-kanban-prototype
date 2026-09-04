@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 interface InviteModalProps {
@@ -10,7 +11,8 @@ interface InviteModalProps {
 }
 
 export default function InviteModal({ onClose, embedded = false }: InviteModalProps) {
-  const { members, inviteMember, isOwner, roles, memberRoleIds, assignMemberRole, userId } = useBoard();
+  const { members, inviteMember, isOwner, userId } = useBoard();
+  const { roles, memberRoleIds, assignMemberRole } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
   const [email, setEmail] = useState("");

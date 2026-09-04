@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { MarketplaceTemplate } from "@/lib/supabase/templates-repo";
 
@@ -13,14 +14,8 @@ interface TemplateMarketplaceModalProps {
 const DEFAULT_INSTALL_ICON = "📋";
 
 export default function TemplateMarketplaceModal({ onClose, embedded = false }: TemplateMarketplaceModalProps) {
-  const {
-    marketplaceTemplates,
-    ownTemplates,
-    publishTemplate,
-    setTemplatePublic,
-    createWorkspace,
-    isOwner,
-  } = useBoard();
+  const { createWorkspace, isOwner } = useBoard();
+  const { marketplaceTemplates, ownTemplates, publishTemplate, setTemplatePublic } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

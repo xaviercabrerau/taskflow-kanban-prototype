@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 interface McpTokensModalProps {
@@ -27,7 +28,8 @@ function formatDate(iso: string | null): string {
 }
 
 export default function McpTokensModal({ onClose, embedded = false }: McpTokensModalProps) {
-  const { mcpSessions, createMcpToken, revokeMcpToken, orgSettings, updateOrgSettings, isOwner } = useBoard();
+  const { isOwner } = useBoard();
+  const { mcpSessions, createMcpToken, revokeMcpToken, orgSettings, updateOrgSettings } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

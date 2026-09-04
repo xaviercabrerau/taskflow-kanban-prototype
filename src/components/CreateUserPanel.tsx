@@ -2,13 +2,15 @@
 
 import { useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 
 // Complementa InviteModal: "Invitar por email" solo funciona si la persona
 // ya tiene cuenta propia en TaskFlow. Este panel crea la cuenta desde cero
 // (vía /api/admin/create-user, que necesita SUPABASE_SERVICE_ROLE_KEY en el
 // servidor) y de una vez la suma a la organización con el rol elegido.
 export default function CreateUserPanel() {
-  const { isOwner, roles } = useBoard();
+  const { isOwner } = useBoard();
+  const { roles } = useAdminData();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
   const [fullName, setFullName] = useState("");

@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import {
   INTEGRATION_PROVIDERS,
@@ -61,7 +62,7 @@ interface ProviderCardProps {
 }
 
 function ProviderCard({ provider, integration }: ProviderCardProps) {
-  const { saveIntegration, deleteIntegration } = useBoard();
+  const { saveIntegration, deleteIntegration } = useAdminData();
   const [expanded, setExpanded] = useState(false);
   const configField = CONFIG_FIELD[provider];
   const [configValue, setConfigValue] = useState(
@@ -325,7 +326,7 @@ function crmGenericConfigFromIntegration(integration: Integration | undefined): 
 }
 
 function CrmGenericCard({ integration }: { integration: Integration | undefined }) {
-  const { saveIntegration, deleteIntegration } = useBoard();
+  const { saveIntegration, deleteIntegration } = useAdminData();
   const [expanded, setExpanded] = useState(false);
   const [form, setForm] = useState<CrmGenericConfig>(() => crmGenericConfigFromIntegration(integration));
   const [secret, setSecret] = useState("");
@@ -583,7 +584,8 @@ function CrmGenericCard({ integration }: { integration: Integration | undefined 
 }
 
 export default function IntegrationsModal({ onClose, embedded = false }: IntegrationsModalProps) {
-  const { integrations, isOwner } = useBoard();
+  const { isOwner } = useBoard();
+  const { integrations } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

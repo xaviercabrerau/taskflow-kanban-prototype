@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 
 interface SsoSettingsModalProps {
@@ -10,7 +11,8 @@ interface SsoSettingsModalProps {
 }
 
 export default function SsoSettingsModal({ onClose, embedded = false }: SsoSettingsModalProps) {
-  const { orgSettings, updateOrgSettings, isOwner } = useBoard();
+  const { isOwner } = useBoard();
+  const { orgSettings, updateOrgSettings } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

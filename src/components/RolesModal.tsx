@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { Permission } from "@/lib/supabase/roles-repo";
 
@@ -11,7 +12,8 @@ interface RolesModalProps {
 }
 
 export default function RolesModal({ onClose, embedded = false }: RolesModalProps) {
-  const { permissionsCatalog, roles, createRole, updateRole, deleteRoleById, isOwner } = useBoard();
+  const { isOwner } = useBoard();
+  const { permissionsCatalog, roles, createRole, updateRole, deleteRoleById } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

@@ -3,6 +3,7 @@
 import { useEffect, useState } from "react";
 import { createClient } from "@/lib/supabase/client";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import MfaSettingsModal from "./MfaSettingsModal";
 
 // El paso de verificación en dos pasos (aal2) para cuentas que ya tienen un
@@ -12,7 +13,7 @@ import MfaSettingsModal from "./MfaSettingsModal";
 // factor — depende de orgSettings, que solo existe dentro de BoardContext.
 export default function MfaGate({ children }: { children: React.ReactNode }) {
   const supabase = createClient();
-  const { orgSettings } = useBoard();
+  const { orgSettings } = useAdminData();
 
   const [checking, setChecking] = useState(true);
   const [needsEnrollment, setNeedsEnrollment] = useState(false);

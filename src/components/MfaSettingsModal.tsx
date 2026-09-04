@@ -2,6 +2,7 @@
 
 import { useEffect, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import { createClient } from "@/lib/supabase/client";
 
@@ -23,7 +24,8 @@ interface Enrollment {
 }
 
 export default function MfaSettingsModal({ onClose, embedded = false }: MfaSettingsModalProps) {
-  const { orgSettings, updateOrgSettings, isOwner } = useBoard();
+  const { isOwner } = useBoard();
+  const { orgSettings, updateOrgSettings } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
   const supabase = createClient();

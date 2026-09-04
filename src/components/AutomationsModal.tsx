@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import type {
   AutomationAction,
   AutomationCondition,
@@ -71,13 +72,21 @@ const SUPABASE_RPC_URL = `${process.env.NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/in
 const SUPABASE_ANON_KEY = process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ?? "";
 
 export default function AutomationsModal({ onClose, embedded = false }: AutomationsModalProps) {
-  const { automationRules, createRule, toggleRule, deleteRule, isOwner, state, inboundWebhooks, createWebhook, toggleWebhook } =
-    useBoard();
+  const { isOwner, state } = useBoard();
+  const { automationRules, createRule, toggleRule, deleteRule, inboundWebhooks, createWebhook, toggleWebhook } =
+    useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
   const columnLabelById = Object.fromEntries(state.columns.map((c) => [c.id, c.title]));
 
-  const [webhookColumnId, setWebhookColumnId] = useState(state.columns[0]?.id ?? "");
+  // Vacío hasta que el usuario elige algo — el valor "por defecto" (primera
+  // columna) se calcula en cada render vía effectiveWebhookColumnId, no al
+  // inicializar el state. Antes, si este modal montaba antes de que
+  // BoardContext terminara de cargar state.columns (ej. entrando directo a
+  // /admin/automatizaciones), quedaba fijo en "" para siempre (hallazgo de
+  // la revisión de calidad de código, 2026-09-04).
+  const [webhookColumnId, setWebhookColumnId] = useState("");
+  const effectiveWebhookColumnId = webhookColumnId || state.columns[0]?.id || "";
   const [webhookSaving, setWebhookSaving] = useState(false);
   const [webhookFeedback, setWebhookFeedback] = useState<{ ok: boolean; message: string } | null>(null);
   const [revealedHookId, setRevealedHookId] = useState<string | null>(null);
@@ -94,22 +103,24 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
   }
 
   async function handleCreateWebhook() {
-    if (!webhookColumnId) return;
+    if (!effectiveWebhookColumnId) return;
     setWebhookSaving(true);
-    const result = await createWebhook(webhookColumnId);
+    const result = await createWebhook(effectiveWebhookColumnId);
     setWebhookSaving(false);
     setWebhookFeedback(result);
   }
 
   const [name, setName] = useState("");
   const [triggerKind, setTriggerKind] = useState<TriggerKind>("task_created");
-  const [triggerColumnId, setTriggerColumnId] = useState(state.columns[0]?.id ?? "");
+  const [triggerColumnId, setTriggerColumnId] = useState("");
+  const effectiveTriggerColumnId = triggerColumnId || state.columns[0]?.id || "";
   const [daysBefore, setDaysBefore] = useState(2);
   const [staleHours, setStaleHours] = useState(24);
   const [actions, setActions] = useState<{ id: number; action: AutomationAction }[]>([]);
   const actionIdRef = useRef(0);
   const [actionKind, setActionKind] = useState<ActionKind>("move_to_column");
-  const [actionColumnId, setActionColumnId] = useState(state.columns[0]?.id ?? "");
+  const [actionColumnId, setActionColumnId] = useState("");
+  const effectiveActionColumnId = actionColumnId || state.columns[0]?.id || "";
   const [actionField, setActionField] = useState<"priority" | "tag">("priority");
   const [actionValue, setActionValue] = useState("");
   const [actionComment, setActionComment] = useState("");
@@ -139,16 +150,16 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
 
   function buildTrigger(): AutomationTrigger {
     if (triggerKind === "task_created") return { type: "task_created" };
-    if (triggerKind === "status_changed") return { type: "status_changed", to_column_id: triggerColumnId || undefined };
+    if (triggerKind === "status_changed") return { type: "status_changed", to_column_id: effectiveTriggerColumnId || undefined };
     if (triggerKind === "sla_stale") return { type: "sla_stale", hours: staleHours };
     return { type: "due_date_approaching", days_before: daysBefore };
   }
 
   function addAction() {
     if (actionKind === "move_to_column") {
-      if (!actionColumnId) return;
+      if (!effectiveActionColumnId) return;
       const id = actionIdRef.current++;
-      setActions((prev) => [...prev, { id, action: { type: "move_to_column", column_id: actionColumnId } }]);
+      setActions((prev) => [...prev, { id, action: { type: "move_to_column", column_id: effectiveActionColumnId } }]);
     } else if (actionKind === "set_field") {
       if (!actionValue.trim()) return;
       const id = actionIdRef.current++;
@@ -290,7 +301,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
               {triggerKind === "status_changed" && (
                 <div className="field" style={{ marginTop: 8 }}>
                   <label htmlFor="trigger-column">Columna destino</label>
-                  <select id="trigger-column" value={triggerColumnId} onChange={(e) => setTriggerColumnId(e.target.value)}>
+                  <select id="trigger-column" value={effectiveTriggerColumnId} onChange={(e) => setTriggerColumnId(e.target.value)}>
                     {state.columns.map((c) => (
                       <option key={c.id} value={c.id}>
                         {c.title}
@@ -413,7 +424,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
                   </select>
 
                   {actionKind === "move_to_column" && (
-                    <select value={actionColumnId} onChange={(e) => setActionColumnId(e.target.value)}>
+                    <select value={effectiveActionColumnId} onChange={(e) => setActionColumnId(e.target.value)}>
                       {state.columns.map((c) => (
                         <option key={c.id} value={c.id}>
                           {c.title}
@@ -562,7 +573,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
               ))}
 
               <div style={{ display: "flex", gap: 8, flexWrap: "wrap", alignItems: "flex-end" }}>
-                <select value={webhookColumnId} onChange={(e) => setWebhookColumnId(e.target.value)}>
+                <select value={effectiveWebhookColumnId} onChange={(e) => setWebhookColumnId(e.target.value)}>
                   {state.columns.map((c) => (
                     <option key={c.id} value={c.id}>
                       {c.title}

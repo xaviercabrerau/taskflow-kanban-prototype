@@ -2,6 +2,7 @@
 
 import { useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { MetricsReport } from "@/lib/supabase/metrics-repo";
 
@@ -28,7 +29,7 @@ function isoDaysAgo(days: number): string {
 }
 
 export default function ReportsModal({ onClose, embedded = false }: ReportsModalProps) {
-  const { fetchReport, generateSnapshot } = useBoard();
+  const { fetchReport, generateSnapshot } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

@@ -2,6 +2,7 @@
 
 import { useMemo, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import type { AuditLogRow } from "@/lib/supabase/org-settings-repo";
 
@@ -26,7 +27,8 @@ function todayStamp(): string {
 }
 
 export default function AuditExportModal({ onClose, embedded = false }: AuditExportModalProps) {
-  const { auditLog, exportAuditLog, orgSettings, updateOrgSettings, isOwner, members } = useBoard();
+  const { isOwner, members } = useBoard();
+  const { auditLog, exportAuditLog, orgSettings, updateOrgSettings } = useAdminData();
   const modalRef = useRef<HTMLDivElement>(null);
   useDialogA11y(modalRef, onClose, !embedded);
 

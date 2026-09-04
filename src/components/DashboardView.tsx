@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import { useAdminData } from "@/context/AdminDataContext";
 import { isOverdue, formatDue, priorityLabel, type Task } from "@/lib/types";
 import type { OrgMember } from "@/lib/supabase/members-repo";
 import type { MetricsReport } from "@/lib/supabase/metrics-repo";
@@ -46,7 +47,8 @@ function MemberSummaryRow({ row, onOpen }: { row: MemberSummaryRowData; onOpen: 
 }
 
 export default function DashboardView() {
-  const { state, members, activeBoardId, fetchReport, generateSnapshot } = useBoard();
+  const { state, members, activeBoardId } = useBoard();
+  const { fetchReport, generateSnapshot } = useAdminData();
 
   const [personTasks, setPersonTasks] = useState<{ label: string; tasks: Task[] } | null>(null);
 
