@@ -26,6 +26,11 @@ const PROVIDER_LABELS: Record<IntegrationProvider, string> = {
   resend: "Email (Resend)",
   gmail_inbound: "Gmail (entrada)",
   google: "Google Workspace (Calendar, Drive, Gmail)",
+  // Sin campo de config en este formulario genérico de un solo input (ver
+  // CONFIG_FIELD abajo) — su config (base_url, endpoints, field_mapping) es
+  // multi-campo y no encaja en ese patrón. Por ahora se configura vía
+  // upsert_integration directamente; UI dedicada queda como pendiente.
+  crm_generic: "CRM (genérico)",
 };
 
 interface ConfigField {

@@ -13,4 +13,8 @@ export const MONITORED_JOBS = [
   { name: "taskflow_execute_recurring_tasks", schedule: "hourly" },
   { name: "purge-expired-audit-logs", schedule: "daily" },
   { name: "record-daily-metrics-snapshots", schedule: "daily" },
+  // Resuelve el external_ticket_id devuelto por el CRM tras una creación
+  // (crm_sync, 20260904000000_crm_generic_adapter.sql) — corre cada minuto
+  // porque vive en pg_cron (Postgres), no en el cron de Vercel.
+  { name: "taskflow_resolve_crm_sync_responses", schedule: "every_minute" },
 ] as const;

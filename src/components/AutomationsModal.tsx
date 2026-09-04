@@ -58,6 +58,12 @@ function describeAction(action: AutomationAction, columnLabelById: Record<string
   if (action.type === "webhook") {
     return `Enviar webhook a ${action.url}`;
   }
+  if (action.type === "crm_sync") {
+    // Sin UI de creación todavía (ver IntegrationsModal.tsx) — la regla se
+    // crea hoy directamente en automation_rules.actions; esto solo la
+    // describe si ya existe.
+    return "Sincronizar con CRM";
+  }
   return `Agregar comentario: "${action.body}"`;
 }
 

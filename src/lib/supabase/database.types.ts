@@ -500,6 +500,45 @@ export type Database = {
           },
         ]
       }
+      crm_sync_requests: {
+        Row: {
+          created_at: string
+          request_id: number
+          response_id_field: string
+          task_id: string
+          tenant_id: string
+        }
+        Insert: {
+          created_at?: string
+          request_id: number
+          response_id_field?: string
+          task_id: string
+          tenant_id: string
+        }
+        Update: {
+          created_at?: string
+          request_id?: number
+          response_id_field?: string
+          task_id?: string
+          tenant_id?: string
+        }
+        Relationships: [
+          {
+            foreignKeyName: "crm_sync_requests_task_id_fkey"
+            columns: ["task_id"]
+            isOneToOne: false
+            referencedRelation: "tasks"
+            referencedColumns: ["id"]
+          },
+          {
+            foreignKeyName: "crm_sync_requests_tenant_id_fkey"
+            columns: ["tenant_id"]
+            isOneToOne: false
+            referencedRelation: "organizations"
+            referencedColumns: ["id"]
+          },
+        ]
+      }
       custom_field_definitions: {
         Row: {
           board_id: string
@@ -1925,6 +1964,7 @@ export type Database = {
           provider: string
         }[]
       }
+      get_crm_credential: { Args: { p_tenant_id: string }; Returns: string }
       get_cron_health: {
         Args: never
         Returns: {
@@ -2034,6 +2074,7 @@ export type Database = {
         Args: { p_integration_id: string }
         Returns: undefined
       }
+      resolve_crm_sync_responses: { Args: never; Returns: undefined }
       resolve_share_link: { Args: { p_token: string }; Returns: Json }
       revoke_mcp_session: { Args: { p_session_id: string }; Returns: undefined }
       search_profile_by_email: {

@@ -1,0 +1,149 @@
+{
+  "name": "TaskFlow -> CRM (saliente)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "taskflow-task-event",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-taskflow-event",
+      "name": "Webhook: evento de TaskFlow",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "URL de este nodo = url de la acción 'webhook' en una automatización de TaskFlow (Automatizaciones -> nueva regla -> acción 'Webhook')."
+    },
+    {
+      "parameters": {
+        "method": "GET",
+        "url": "={{$env.NEXT_PUBLIC_SUPABASE_URL}}/rest/v1/tasks",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [
+            { "name": "id", "value": "=eq.{{$json.task_id}}" },
+            { "name": "select", "value": "id,title,description,priority,column_id,external_ticket_id" }
+          ]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [{ "name": "apikey", "value": "={{$env.NEXT_PUBLIC_SUPABASE_ANON_KEY}}" }]
+        },
+        "options": {}
+      },
+      "id": "http-get-task",
+      "name": "GET tarea (con external_ticket_id)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [260, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": true, "leftValue": "", "typeValidation": "loose" },
+          "conditions": [
+            {
+              "leftValue": "={{$json[0].external_ticket_id}}",
+              "rightValue": "",
+              "operator": { "type": "string", "operation": "notEmpty" }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "if-has-external-id",
+      "name": "¿Ya tiene external_ticket_id?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [520, 0]
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.CRM_BASE_URL}}/tickets/{{$json[0].external_ticket_id}}",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{$env.CRM_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { subject: $json[0].title, body: $json[0].description, status: $json[0].column_id } }}",
+        "options": {}
+      },
+      "id": "http-crm-update",
+      "name": "Actualizar ticket en CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, -120],
+      "notes": "Reemplazar por el nodo nativo del CRM (HubSpot/Salesforce/Pipedrive/Zoho CRM, operación Update) si aplica."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.CRM_BASE_URL}}/tickets",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "Authorization", "value": "={{$env.CRM_API_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { subject: $json[0].title, body: $json[0].description, status: $json[0].column_id } }}",
+        "options": {}
+      },
+      "id": "http-crm-create",
+      "name": "Crear ticket en CRM",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [780, 120],
+      "notes": "Reemplazar por el nodo nativo del CRM (HubSpot/Salesforce/Pipedrive/Zoho CRM, operación Create) si aplica."
+    },
+    {
+      "parameters": {
+        "method": "PATCH",
+        "url": "={{$env.NEXT_PUBLIC_SUPABASE_URL}}/rest/v1/tasks",
+        "sendQuery": true,
+        "queryParameters": {
+          "parameters": [{ "name": "id", "value": "=eq.{{$('Webhook: evento de TaskFlow').item.json.task_id}}" }]
+        },
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$env.NEXT_PUBLIC_SUPABASE_ANON_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { external_ticket_id: String($json.id) } }}",
+        "options": {}
+      },
+      "id": "http-save-external-id",
+      "name": "Guardar external_ticket_id en TaskFlow",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [1040, 120],
+      "notes": "$json.id asume que el CRM devuelve el id del ticket creado en el campo 'id' — ajustar al campo real de la respuesta de tu CRM."
+    }
+  ],
+  "connections": {
+    "Webhook: evento de TaskFlow": { "main": [[{ "node": "GET tarea (con external_ticket_id)", "type": "main", "index": 0 }]] },
+    "GET tarea (con external_ticket_id)": { "main": [[{ "node": "¿Ya tiene external_ticket_id?", "type": "main", "index": 0 }]] },
+    "¿Ya tiene external_ticket_id?": {
+      "main": [
+        [{ "node": "Actualizar ticket en CRM", "type": "main", "index": 0 }],
+        [{ "node": "Crear ticket en CRM", "type": "main", "index": 0 }]
+      ]
+    },
+    "Crear ticket en CRM": { "main": [[{ "node": "Guardar external_ticket_id en TaskFlow", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}

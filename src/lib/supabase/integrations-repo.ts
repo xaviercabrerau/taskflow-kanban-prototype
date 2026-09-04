@@ -14,6 +14,10 @@ export const INTEGRATION_PROVIDERS = [
   "resend",
   "gmail_inbound",
   "google",
+  // Adaptador CRM genérico (Opción 3, docs/plans/2026-09-03-crm-integration-design.md):
+  // config = { base_url, auth_header, create_endpoint, update_endpoint,
+  // response_id_field, field_mapping }; el secreto va en Vault como el resto.
+  "crm_generic",
 ] as const;
 export type IntegrationProvider = (typeof INTEGRATION_PROVIDERS)[number];
 

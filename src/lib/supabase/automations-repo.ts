@@ -13,7 +13,12 @@ export type AutomationAction =
   | { type: "move_to_column"; column_id: string }
   | { type: "set_field"; field: string; value: string }
   | { type: "add_comment"; body: string }
-  | { type: "webhook"; url: string };
+  | { type: "webhook"; url: string }
+  // Sincroniza la tarea con un ticket/caso en el CRM configurado en
+  // integration_id (provider "crm_generic") — crea o actualiza según si la
+  // tarea ya tiene external_ticket_id. Ejecutada en execute_automation_rules()
+  // (20260904000000_crm_generic_adapter.sql), no en el cliente.
+  | { type: "crm_sync"; integration_id: string };
 
 export type AutomationConditionField = "priority" | "tag" | "assignee_name" | "title";
 export type AutomationConditionOperator = "eq" | "neq" | "contains";
@@ -35,7 +40,7 @@ export interface AutomationRule {
 }
 
 const TRIGGER_TYPES = new Set(["task_created", "status_changed", "due_date_approaching", "sla_stale"]);
-const ACTION_TYPES = new Set(["move_to_column", "set_field", "add_comment", "webhook"]);
+const ACTION_TYPES = new Set(["move_to_column", "set_field", "add_comment", "webhook", "crm_sync"]);
 const CONDITION_FIELDS = new Set<AutomationConditionField>(["priority", "tag", "assignee_name", "title"]);
 const CONDITION_OPERATORS = new Set<AutomationConditionOperator>(["eq", "neq", "contains"]);
 

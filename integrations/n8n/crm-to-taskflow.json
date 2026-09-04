@@ -1,0 +1,68 @@
+{
+  "name": "CRM -> TaskFlow (entrante)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "crm-ticket-event",
+        "responseMode": "lastNode",
+        "options": {}
+      },
+      "id": "webhook-crm-event",
+      "name": "Webhook: evento del CRM",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0],
+      "notes": "Reemplazar por el nodo trigger nativo del CRM (ej. HubSpot Trigger, Salesforce Trigger, Pipedrive Trigger, Zoho CRM Trigger) si tu CRM es uno de esos 4 — ver README.md."
+    },
+    {
+      "parameters": {
+        "mode": "manual",
+        "assignments": {
+          "assignments": [
+            { "name": "p_token", "type": "string", "value": "={{$env.TASKFLOW_INBOUND_WEBHOOK_TOKEN}}" },
+            { "name": "p_external_ticket_id", "type": "string", "value": "={{$json.ticket_id}}" },
+            { "name": "p_title", "type": "string", "value": "={{$json.subject}}" },
+            { "name": "p_description", "type": "string", "value": "={{$json.body}}" },
+            { "name": "p_priority", "type": "string", "value": "={{$json.priority || 'medium'}}" }
+          ]
+        },
+        "options": {}
+      },
+      "id": "set-mapping",
+      "name": "Mapear campos CRM -> TaskFlow",
+      "type": "n8n-nodes-base.set",
+      "typeVersion": 3.4,
+      "position": [260, 0],
+      "notes": "Ajustar $json.ticket_id/subject/body/priority a los nombres reales de campos que envíe tu CRM."
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{$env.NEXT_PUBLIC_SUPABASE_URL}}/rest/v1/rpc/ingest_webhook_task",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "apikey", "value": "={{$env.NEXT_PUBLIC_SUPABASE_ANON_KEY}}" },
+            { "name": "Content-Type", "value": "application/json" }
+          ]
+        },
+        "sendBody": true,
+        "specifyBody": "json",
+        "jsonBody": "={{ { p_token: $json.p_token, p_title: $json.p_title, p_description: $json.p_description, p_priority: $json.p_priority, p_external_ticket_id: $json.p_external_ticket_id } }}",
+        "options": {}
+      },
+      "id": "http-ingest",
+      "name": "POST ingest_webhook_task",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [520, 0]
+    }
+  ],
+  "connections": {
+    "Webhook: evento del CRM": { "main": [[{ "node": "Mapear campos CRM -> TaskFlow", "type": "main", "index": 0 }]] },
+    "Mapear campos CRM -> TaskFlow": { "main": [[{ "node": "POST ingest_webhook_task", "type": "main", "index": 0 }]] }
+  },
+  "active": false,
+  "settings": { "executionOrder": "v1" }
+}
