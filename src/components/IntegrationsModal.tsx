@@ -325,7 +325,11 @@ function crmGenericConfigFromIntegration(integration: Integration | undefined): 
   };
 }
 
-function CrmGenericCard({ integration }: { integration: Integration | undefined }) {
+interface CrmGenericCardProps {
+  integration: Integration | undefined;
+}
+
+function CrmGenericCard({ integration }: CrmGenericCardProps) {
   const { saveIntegration, deleteIntegration } = useAdminData();
   const [expanded, setExpanded] = useState(false);
   const [form, setForm] = useState<CrmGenericConfig>(() => crmGenericConfigFromIntegration(integration));

@@ -5,6 +5,27 @@ import type { BoardHandle } from "./bootstrap";
 
 type TypedClient = SupabaseClient<Database>;
 type TaskRow = Database["public"]["Tables"]["tasks"]["Row"];
+// fetchBoardState solo trae las columnas que rowToTask()/el bucketing por
+// columna realmente usan (no description/custom_fields/etc., que ningún
+// componente lee — verificado antes de acotar el select, Fase 1 Tarea 3
+// del plan de 2026-09-04).
+type BoardTaskRow = Pick<
+  TaskRow,
+  | "id"
+  | "title"
+  | "priority"
+  | "assignee_name"
+  | "assignee_user_id"
+  | "created_at"
+  | "tag"
+  | "start_date"
+  | "due_date"
+  | "parent_task_id"
+  | "epic_id"
+  | "sprint_id"
+  | "column_id"
+  | "position"
+>;
 
 export interface FetchResult {
   state: BoardState;
@@ -18,7 +39,7 @@ function toDateOnly(value: string | null): string | undefined {
   return value ? value.slice(0, 10) : undefined;
 }
 
-function rowToTask(row: TaskRow): Task {
+function rowToTask(row: BoardTaskRow): Task {
   return {
     id: row.id,
     title: row.title,
@@ -38,7 +59,11 @@ function rowToTask(row: TaskRow): Task {
 export async function fetchBoardState(supabase: TypedClient, board: BoardHandle): Promise<FetchResult> {
   const [{ data: columnRows, error: colError }, { data: taskRows, error: taskError }] = await Promise.all([
     supabase.from("board_columns").select("*").eq("board_id", board.boardId).order("order_index"),
-    supabase.from("tasks").select("*").eq("board_id", board.boardId).order("position"),
+    supabase
+      .from("tasks")
+      .select("id,title,priority,assignee_name,assignee_user_id,created_at,tag,start_date,due_date,parent_task_id,epic_id,sprint_id,column_id,position")
+      .eq("board_id", board.boardId)
+      .order("position"),
   ]);
   if (colError) throw colError;
   if (taskError) throw taskError;
