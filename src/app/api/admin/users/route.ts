@@ -182,6 +182,42 @@ export async function POST(request: Request) {
     }
   }
 
+  // Sin un rol RBAC asignado, el nuevo miembro queda en modo solo-lectura
+  // por las políticas RLS aunque su org_role sea 'admin' — org_role y los
+  // permisos granulares (task.create/task.update, etc.) son sistemas
+  // independientes. Se le otorga el rol de sistema "Contribuyente" en
+  // cada board del tenant, mismo patrón ya usado en
+  // inviteMemberByEmail (members-repo.ts). Este endpoint no expone un
+  // selector de rol RBAC en su UI, así que siempre se asigna este rol por
+  // defecto — de lo contrario ningún usuario creado aquí podría crear
+  // tareas, sin importar su org_role.
+  const { data: contributorRole } = await admin
+    .from("roles")
+    .select("id")
+    .eq("name", "Contribuyente")
+    .eq("is_system", true)
+    .maybeSingle();
+  const { data: boards } = await admin.from("boards").select("id").eq("tenant_id", membership.organization_id);
+  let roleWarning: string | null = null;
+  if (contributorRole && boards?.length) {
+    const { error: roleAssignError } = await admin.from("role_assignments").insert(
+      boards.map((b) => ({
+        tenant_id: membership.organization_id,
+        user_id: created.user.id,
+        role_id: contributorRole.id,
+        scope_type: "board",
+        scope_id: b.id,
+        granted_by: authData.user.id,
+      }))
+    );
+    if (roleAssignError) {
+      console.error("POST /api/admin/users: failed to insert role_assignments", roleAssignError);
+      roleWarning = "Usuario creado pero no se pudo asignar el rol Contribuyente. Asígnalo manualmente desde Roles y permisos.";
+    }
+  } else {
+    roleWarning = "Usuario creado pero no se pudo asignar el rol Contribuyente. Asígnalo manualmente desde Roles y permisos.";
+  }
+
   return Response.json(
     {
       id: created.user.id,
@@ -194,6 +230,7 @@ export async function POST(request: Request) {
       updatedAt: created.user.created_at,
       assignedClientIds: [],
       password: tempPassword,
+      ...(roleWarning ? { warning: roleWarning } : {}),
     },
     { status: 200 }
   );

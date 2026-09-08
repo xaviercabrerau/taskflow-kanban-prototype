@@ -47,10 +47,37 @@ describe('API: /api/admin/users (GET & POST)', () => {
           }),
         },
       },
-      from: jest.fn().mockReturnValue({
-        insert: jest.fn().mockResolvedValue({ error: null }),
-        update: jest.fn().mockReturnThis(),
-        eq: jest.fn().mockResolvedValue({ error: null }),
+      // Routes by table name: organization_members/role_assignments are
+      // insert-only, profiles is update().eq(), roles is a
+      // select().eq().eq().maybeSingle() lookup, boards is select().eq()
+      // resolving directly (no maybeSingle) — same shape the real route
+      // uses for its Contribuyente role auto-assignment (mirrors
+      // inviteMemberByEmail in members-repo.ts).
+      from: jest.fn().mockImplementation((table: string) => {
+        if (table === 'roles') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: { id: 'contributor-role-id' },
+              error: null,
+            }),
+          };
+        }
+        if (table === 'boards') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockResolvedValue({
+              data: [{ id: 'board-1' }],
+              error: null,
+            }),
+          };
+        }
+        return {
+          insert: jest.fn().mockResolvedValue({ error: null }),
+          update: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockResolvedValue({ error: null }),
+        };
       }),
     };
 
