@@ -34,14 +34,15 @@ import {
   removeTagFromTask,
   type Tag,
 } from "@/lib/supabase/tags-repo";
-import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
-import type { ShareLink, SharePermission } from "@/lib/supabase/share-links-repo";
 import { generateTempId } from "@/lib/tempId";
 import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
 import { fetchEpics, type Epic } from "@/lib/supabase/epics-repo";
 import { fetchSprints, type Sprint } from "@/lib/supabase/sprints-repo";
 import TaskGithubSection from "./TaskGithubSection";
 import TaskTimeSection from "./TaskTimeSection";
+import TaskForwardEmailSection from "./TaskForwardEmailSection";
+import TaskMeetingSection from "./TaskMeetingSection";
+import TaskShareSection from "./TaskShareSection";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
 
 function formatFileSize(bytes: number | null): string {
@@ -133,12 +134,6 @@ export default function TaskModal({
   const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
   const [uploading, setUploading] = useState(false);
 
-  const [forwardEmailOpen, setForwardEmailOpen] = useState(false);
-  const [forwardTo, setForwardTo] = useState("");
-  const [forwardNote, setForwardNote] = useState("");
-  const [forwardingEmail, setForwardingEmail] = useState(false);
-  const [forwardResult, setForwardResult] = useState<{ ok: boolean; message: string } | null>(null);
-
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
   const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
@@ -146,25 +141,6 @@ export default function TaskModal({
   const [linkDirection, setLinkDirection] = useState<"blocked_by" | "blocks">("blocked_by");
   const [linkingBusy, setLinkingBusy] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
-
-  const [meetFormOpen, setMeetFormOpen] = useState(false);
-  const [meetDate, setMeetDate] = useState("");
-  const [meetTime, setMeetTime] = useState("");
-  const [meetDuration, setMeetDuration] = useState(30);
-  const [meetExtraEmails, setMeetExtraEmails] = useState("");
-  const [scheduling, setScheduling] = useState(false);
-  const [meetLink, setMeetLink] = useState<string | null>(null);
-  const [meetScheduledAt, setMeetScheduledAt] = useState<string | null>(null);
-  const [meetError, setMeetError] = useState<string | null>(null);
-
-  const [shareLinks, setShareLinks] = useState<ShareLink[]>([]);
-  const [shareFormOpen, setShareFormOpen] = useState(false);
-  const [sharePermission, setSharePermission] = useState<SharePermission>("view");
-  const [creatingShare, setCreatingShare] = useState(false);
-  const [shareError, setShareError] = useState<string | null>(null);
-  const [newShareUrl, setNewShareUrl] = useState<string | null>(null);
-  const [newShareLinkId, setNewShareLinkId] = useState<string | null>(null);
-  const [copiedShareId, setCopiedShareId] = useState<string | null>(null);
 
   const [checklists, setChecklists] = useState<Checklist[]>([]);
   const [checklistsLoading, setChecklistsLoading] = useState(Boolean(taskId));
@@ -330,49 +306,14 @@ export default function TaskModal({
     };
   }, [supabase, taskId, tenantId, activeBoardId]);
 
-  // Reunión y Compartir son secciones minoritarias — la mayoría de usuarios
-  // nunca las abre en una sesión dada. Se cargan en un efecto aparte, con un
-  // pequeño delay, para no competir con los ~6 fetches "core" de arriba
-  // (comments/attachments/checklists/tags/activity/links) por ancho de
-  // banda justo cuando el modal recién se vuelve interactivo
-  // (AUDITORIA_2026-09-03.md, hallazgo 10). GitHub y Tiempo cargan los
-  // suyos por su cuenta — ver TaskGithubSection.tsx/TaskTimeSection.tsx
-  // (Tarea 9 del plan de 2026-09-04).
-  useEffect(() => {
-    if (!taskId) return;
-    let cancelled = false;
-
-    const timer = setTimeout(() => {
-      if (cancelled) return;
-
-      fetchTaskMeetInfo(supabase, taskId)
-        .then((info) => {
-          if (!cancelled) {
-            setMeetLink(info.meetLink);
-            setMeetScheduledAt(info.meetScheduledAt);
-          }
-        })
-        .catch((err) => {
-          console.error("No se pudo cargar el estado de la reunión:", err);
-        });
-
-      fetch(`/api/share-links?boardId=${encodeURIComponent(activeBoardId ?? "")}`)
-        .then((res) => res.json())
-        .then((json) => {
-          if (!cancelled && Array.isArray(json.links)) {
-            setShareLinks((json.links as ShareLink[]).filter((l) => l.taskId === taskId));
-          }
-        })
-        .catch((err) => {
-          console.error("No se pudieron cargar los links compartidos:", err);
-        });
-    }, 200);
-
-    return () => {
-      cancelled = true;
-      clearTimeout(timer);
-    };
-  }, [supabase, taskId, activeBoardId]);
+  // Reunión, Compartir, GitHub y Tiempo son secciones minoritarias — la
+  // mayoría de usuarios nunca las abre en una sesión dada. Cada una carga
+  // sus propios datos con un pequeño delay para no competir con los ~6
+  // fetches "core" de arriba (comments/attachments/checklists/tags/
+  // activity/links) por ancho de banda justo cuando el modal recién se
+  // vuelve interactivo (AUDITORIA_2026-09-03.md, hallazgo 10) — ver
+  // TaskGithubSection.tsx/TaskTimeSection.tsx/TaskMeetingSection.tsx/
+  // TaskShareSection.tsx (Tarea 9 del plan de 2026-09-04).
 
   const mentionMatches: OrgMember[] =
     mentionState !== null
@@ -589,102 +530,6 @@ export default function TaskModal({
       setAttachmentsError(err instanceof Error ? err.message : "No se pudieron adjuntar los archivos.");
     } finally {
       setPickerAttaching(false);
-    }
-  }
-
-  async function handleForwardEmail() {
-    const to = forwardTo.trim();
-    if (!to || !taskId || forwardingEmail) return;
-    setForwardingEmail(true);
-    setForwardResult(null);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/forward-email`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ to, note: forwardNote.trim() || undefined }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudo enviar el email.");
-      }
-      setForwardResult({ ok: true, message: `Tarea reenviada a ${to}.` });
-      setForwardTo("");
-      setForwardNote("");
-    } catch (err) {
-      setForwardResult({
-        ok: false,
-        message: err instanceof Error ? err.message : "No se pudo enviar el email.",
-      });
-    } finally {
-      setForwardingEmail(false);
-    }
-  }
-
-  async function handleScheduleMeeting() {
-    if (!taskId || !meetDate || !meetTime || scheduling) return;
-    setScheduling(true);
-    setMeetError(null);
-    try {
-      const startTime = new Date(`${meetDate}T${meetTime}`).toISOString();
-      const extraEmails = meetExtraEmails
-        .split(/[,\s]+/)
-        .map((e) => e.trim())
-        .filter(Boolean);
-      const res = await fetch(`/api/tasks/${taskId}/schedule-meeting`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ startTime, durationMinutes: meetDuration, extraEmails }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudo agendar la reunión.");
-      }
-      setMeetLink(json.meetLink);
-      setMeetScheduledAt(json.scheduledAt);
-      setMeetFormOpen(false);
-    } catch (err) {
-      setMeetError(err instanceof Error ? err.message : "No se pudo agendar la reunión.");
-    } finally {
-      setScheduling(false);
-    }
-  }
-
-  async function handleCreateShareLink() {
-    if (!taskId || !activeBoardId || creatingShare) return;
-    setCreatingShare(true);
-    setShareError(null);
-    try {
-      const res = await fetch("/api/share-links", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ boardId: activeBoardId, taskId, scope: "task", permission: sharePermission }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudo crear el link.");
-      }
-      const url = `${window.location.origin}/share/${json.token}`;
-      setShareLinks((prev) => [json.link as ShareLink, ...prev]);
-      setNewShareUrl(url);
-      setNewShareLinkId((json.link as ShareLink).id);
-      setShareFormOpen(false);
-    } catch (err) {
-      setShareError(err instanceof Error ? err.message : "No se pudo crear el link.");
-    } finally {
-      setCreatingShare(false);
-    }
-  }
-
-  async function handleRevokeShareLink(linkId: string) {
-    try {
-      await fetch(`/api/share-links/${linkId}`, { method: "DELETE" });
-      setShareLinks((prev) => prev.filter((l) => l.id !== linkId));
-      if (newShareLinkId === linkId) {
-        setNewShareUrl(null);
-        setNewShareLinkId(null);
-      }
-    } catch (err) {
-      console.error("No se pudo revocar el link:", err);
     }
   }
 
@@ -1481,245 +1326,13 @@ export default function TaskModal({
                 )}
               </div>
 
-              {taskId && googleConnected && (
-                <div className="field task-section">
-                  <label>Reenviar por email</label>
-                  {!forwardEmailOpen ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        setForwardEmailOpen(true);
-                        setForwardResult(null);
-                      }}
-                    >
-                      📧 Reenviar por email
-                    </button>
-                  ) : (
-                    // Nota: no puede ser un <form> — TaskModal ya está envuelto
-                    // en el <form> principal de guardar tarea (línea ~603), y
-                    // un <form> anidado es HTML inválido: el navegador lo
-                    // descarta y el botón "Enviar" terminaba disparando el
-                    // submit del formulario externo (guardaba y cerraba el
-                    // modal sin llamar a handleForwardEmail).
-                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div className="comment-input-wrap" style={{ marginTop: 0 }}>
-                        <input
-                          id="forward-email-to"
-                          name="forwardEmailTo"
-                          type="email"
-                          value={forwardTo}
-                          onChange={(e) => setForwardTo(e.target.value)}
-                          onKeyDown={(e) => {
-                            if (e.key === "Enter") {
-                              e.preventDefault();
-                              handleForwardEmail();
-                            }
-                          }}
-                          placeholder="Email del destinatario"
-                          disabled={forwardingEmail}
-                          required
-                        />
-                      </div>
-                      <textarea
-                        id="forward-email-note"
-                        name="forwardEmailNote"
-                        value={forwardNote}
-                        onChange={(e) => setForwardNote(e.target.value)}
-                        placeholder="Nota (opcional)"
-                        disabled={forwardingEmail}
-                        rows={2}
-                        style={{ width: "100%" }}
-                      />
-                      <div>
-                        <button
-                          type="button"
-                          className="btn primary"
-                          onClick={handleForwardEmail}
-                          disabled={!forwardTo.trim() || forwardingEmail}
-                        >
-                          {forwardingEmail ? "Enviando…" : "Enviar"}
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {forwardResult && (
-                    <p
-                      role={forwardResult.ok ? "status" : "alert"}
-                      className={forwardResult.ok ? undefined : "field-error"}
-                      style={forwardResult.ok ? { color: "var(--low)", fontSize: 13.5 } : undefined}
-                    >
-                      {forwardResult.message}
-                    </p>
-                  )}
-                </div>
-              )}
+              {taskId && <TaskForwardEmailSection taskId={taskId} />}
 
-              {taskId && googleConnected && (
-                <div className="field task-section">
-                  <label>Agendar reunión</label>
-                  {meetLink && !meetFormOpen && (
-                    <p style={{ fontSize: 13.5, marginBottom: 10 }}>
-                      Reunión agendada
-                      {meetScheduledAt ? ` para ${formatDateTime(meetScheduledAt)}` : ""} —{" "}
-                      <a href={meetLink} target="_blank" rel="noopener noreferrer">
-                        Unirse en Google Meet
-                      </a>
-                    </p>
-                  )}
-                  {!meetFormOpen ? (
-                    <button
-                      type="button"
-                      className="btn"
-                      onClick={() => {
-                        setMeetFormOpen(true);
-                        setMeetError(null);
-                      }}
-                    >
-                      📅 {meetLink ? "Reagendar reunión" : "Agendar reunión"}
-                    </button>
-                  ) : (
-                    <div style={{ marginTop: 12, display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div className="field-row">
-                        <div className="field">
-                          <label htmlFor="meet-date">Fecha</label>
-                          <input
-                            id="meet-date"
-                            type="date"
-                            value={meetDate}
-                            onChange={(e) => setMeetDate(e.target.value)}
-                            disabled={scheduling}
-                            required
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor="meet-time">Hora</label>
-                          <input
-                            id="meet-time"
-                            type="time"
-                            value={meetTime}
-                            onChange={(e) => setMeetTime(e.target.value)}
-                            disabled={scheduling}
-                            required
-                          />
-                        </div>
-                        <div className="field">
-                          <label htmlFor="meet-duration">Duración</label>
-                          <select
-                            id="meet-duration"
-                            value={meetDuration}
-                            onChange={(e) => setMeetDuration(Number(e.target.value))}
-                            disabled={scheduling}
-                          >
-                            <option value={15}>15 min</option>
-                            <option value={30}>30 min</option>
-                            <option value={60}>1 hora</option>
-                            <option value={120}>2 horas</option>
-                          </select>
-                        </div>
-                      </div>
-                      <div className="field">
-                        <label htmlFor="meet-extra-emails">Invitar también a (opcional)</label>
-                        <input
-                          id="meet-extra-emails"
-                          type="text"
-                          value={meetExtraEmails}
-                          onChange={(e) => setMeetExtraEmails(e.target.value)}
-                          placeholder="cliente@empresa.com, otra@empresa.com"
-                          disabled={scheduling}
-                        />
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button
-                          type="button"
-                          className="btn primary"
-                          onClick={handleScheduleMeeting}
-                          disabled={!meetDate || !meetTime || scheduling}
-                        >
-                          {scheduling ? "Agendando…" : "Agendar"}
-                        </button>
-                        <button type="button" className="btn" onClick={() => setMeetFormOpen(false)}>
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {meetError && (
-                    <p role="alert" className="field-error">
-                      {meetError}
-                    </p>
-                  )}
-                </div>
-              )}
+              {taskId && <TaskMeetingSection taskId={taskId} />}
 
               {taskId && <TaskGithubSection taskId={taskId} />}
 
-              {taskId && (
-                <div className="field task-section">
-                  <label>Compartir</label>
-                  {shareLinks.length > 0 && (
-                    <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-                      {shareLinks.map((link) => (
-                        <li key={link.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                          <span>
-                            {link.permission === "comment" ? "Invitado (puede comentar)" : "Solo lectura"}
-                            {link.label ? ` — ${link.label}` : ""}
-                          </span>
-                          {link.id === newShareLinkId && newShareUrl && (
-                            <button
-                              type="button"
-                              className="btn"
-                              onClick={() => {
-                                navigator.clipboard.writeText(newShareUrl);
-                                setCopiedShareId(link.id);
-                                setTimeout(() => setCopiedShareId(null), 2000);
-                              }}
-                            >
-                              {copiedShareId === link.id ? "Copiado ✓" : "Copiar link"}
-                            </button>
-                          )}
-                          <button type="button" className="btn" onClick={() => handleRevokeShareLink(link.id)}>
-                            Revocar
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  {!shareFormOpen ? (
-                    <button type="button" className="btn" onClick={() => setShareFormOpen(true)}>
-                      🔗 Crear link compartible
-                    </button>
-                  ) : (
-                    <div style={{ display: "flex", flexDirection: "column", gap: 10 }}>
-                      <div className="field">
-                        <label htmlFor="share-permission">Permiso</label>
-                        <select
-                          id="share-permission"
-                          value={sharePermission}
-                          onChange={(e) => setSharePermission(e.target.value as SharePermission)}
-                          disabled={creatingShare}
-                        >
-                          <option value="view">Solo lectura</option>
-                          <option value="comment">Invitado — puede comentar</option>
-                        </select>
-                      </div>
-                      <div style={{ display: "flex", gap: 8 }}>
-                        <button type="button" className="btn primary" onClick={handleCreateShareLink} disabled={creatingShare}>
-                          {creatingShare ? "Creando…" : "Crear"}
-                        </button>
-                        <button type="button" className="btn" onClick={() => setShareFormOpen(false)}>
-                          Cancelar
-                        </button>
-                      </div>
-                    </div>
-                  )}
-                  {shareError && (
-                    <p role="alert" className="field-error">
-                      {shareError}
-                    </p>
-                  )}
-                </div>
-              )}
+              {taskId && <TaskShareSection taskId={taskId} />}
 
               <div className="field task-section">
                 <label>Actividad</label>
