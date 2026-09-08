@@ -5,18 +5,31 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
 }));
 
+// PUT updates profiles.full_name via the service-role client (RLS on
+// profiles restricts UPDATE to id = auth.uid(), so an owner editing
+// ANOTHER user's name must bypass RLS) — mocked separately from the
+// request-scoped client above, same rationale as users/__tests__/route.test.ts.
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(),
+}));
+
 import { GET as getUser, PUT as updateUser, DELETE as deleteUser } from '../[id]/route';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
 
 describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chainable Supabase query builder mock; typing the full chain is impractical for a test fixture
   let mockSupabase: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- service-role admin client mock (profiles.update), same rationale as mockSupabase
+  let mockAdminSupabase: any;
   let mockRequest: Request;
   const testUserId = 'user-123';
   const testOrgId = 'org-123';
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
 
     mockSupabase = {
       auth: {
@@ -26,6 +39,15 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
     };
 
     (createClient as jest.Mock).mockResolvedValue(mockSupabase);
+
+    mockAdminSupabase = {
+      from: jest.fn().mockReturnValue({
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      }),
+    };
+
+    (createServiceClient as jest.Mock).mockReturnValue(mockAdminSupabase);
   });
 
   describe('GET /api/admin/users/[id]', () => {
@@ -204,14 +226,32 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
         error: null,
       });
 
-      const mockFromChain = {
-        select: jest.fn(),
-        eq: jest.fn().mockReturnThis(),
-        maybeSingle: jest.fn(),
-        update: jest.fn().mockReturnThis(),
-      };
-
-      mockSupabase.from.mockReturnValue(mockFromChain);
+      // organization_members is only read here (membership check + the
+      // final re-fetch) — no role in the request body, so no write to
+      // this table in this test.
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'organization_members') {
+          return {
+            select: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnThis(),
+            maybeSingle: jest.fn().mockResolvedValue({
+              data: { organization_id: testOrgId, org_role: 'owner', joined_at: '2026-01-01T00:00:00.000Z' },
+              error: null,
+            }),
+          };
+        }
+        // profiles: the final re-fetch after the write, done through the
+        // request-scoped client (profiles_select allows reading org-mates'
+        // profiles — only the UPDATE is self-only).
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { id: testUserId, email: 'updated@example.com', full_name: 'Updated Name' },
+            error: null,
+          }),
+        };
+      });
 
       const body = { name: 'Updated Name' };
 
@@ -220,7 +260,17 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
         body: JSON.stringify(body),
       });
 
-      // Complex setup with multiple mocked queries
+      const response = await updateUser(mockRequest, { params });
+      const json = await response.json();
+
+      expect(response.status).toBe(200);
+      expect(json.name).toBe('Updated Name');
+      // The actual write must go through the service-role client
+      // (mockAdminSupabase), not the RLS-constrained request-scoped one —
+      // this is the regression this test guards against: profiles UPDATE
+      // is restricted to id = auth.uid(), so writing another user's name
+      // through the request-scoped client silently updates zero rows.
+      expect(mockAdminSupabase.from).toHaveBeenCalledWith('profiles');
     });
 
     it('should handle role update errors gracefully', async () => {
@@ -229,13 +279,35 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
         error: null,
       });
 
-      const mockFromChain = {
-        select: jest.fn(),
-        eq: jest.fn().mockReturnThis(),
-        update: jest.fn().mockReturnThis(),
-      };
-
-      mockSupabase.from.mockReturnValue(mockFromChain);
+      let orgMembersCallCount = 0;
+      mockSupabase.from.mockImplementation((table: string) => {
+        if (table === 'organization_members') {
+          orgMembersCallCount += 1;
+          if (orgMembersCallCount === 1) {
+            // Membership check (owner) — read.
+            return {
+              select: jest.fn().mockReturnThis(),
+              eq: jest.fn().mockReturnThis(),
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: { organization_id: testOrgId, org_role: 'owner' },
+                error: null,
+              }),
+            };
+          }
+          // Role update — write, fails. .update().eq().eq() is the real
+          // call shape; the second .eq() is where the promise resolves.
+          const secondEq = jest.fn().mockResolvedValue({ error: { message: 'No se pudo actualizar el rol' } });
+          return {
+            update: jest.fn().mockReturnThis(),
+            eq: jest.fn().mockReturnValue({ eq: secondEq }),
+          };
+        }
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({ data: null, error: null }),
+        };
+      });
 
       const body = { role: 'admin' };
 
@@ -244,7 +316,11 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
         body: JSON.stringify(body),
       });
 
-      // Simplified for example
+      const response = await updateUser(mockRequest, { params });
+      const json = await response.json();
+
+      expect(response.status).toBe(400);
+      expect(json.error).toBe('No se pudo actualizar el rol');
     });
   });
 

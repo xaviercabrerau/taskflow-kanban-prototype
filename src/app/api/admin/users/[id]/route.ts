@@ -1,4 +1,6 @@
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/database.types";
 
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: userId } = await params;
@@ -80,7 +82,23 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
   }
 
   if (body.name) {
-    const { error: updateError } = await supabase
+    // La política RLS de profiles (profiles_update_own) solo permite
+    // `id = auth.uid()` — un owner editando el nombre de OTRO usuario con
+    // el cliente normal (con RLS) no actualiza nada: la fila queda
+    // filtrada silenciosamente por RLS antes del UPDATE, sin error, así
+    // que el nombre nunca cambiaba pese a que la UI mostraba éxito.
+    // Se usa el cliente de service-role, mismo patrón que las rutas
+    // hermanas (users/route.ts, create-user, reset-password).
+    const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+    const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+    if (!serviceRoleKey || !supabaseUrl) {
+      return Response.json(
+        { error: "El servidor no tiene configurado SUPABASE_SERVICE_ROLE_KEY. Agrégalo en las variables de entorno." },
+        { status: 500 }
+      );
+    }
+    const admin = createServiceClient<Database>(supabaseUrl, serviceRoleKey);
+    const { error: updateError } = await admin
       .from("profiles")
       .update({ full_name: body.name })
       .eq("id", userId);
