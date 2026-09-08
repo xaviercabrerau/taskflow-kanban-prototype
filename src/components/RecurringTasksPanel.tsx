@@ -47,15 +47,21 @@ function anchorStartDate(date: Date, frequency: RecurrenceFrequency, dayOfWeek: 
 export default function RecurringTasksPanel({ onClose, embedded = false }: RecurringTasksPanelProps) {
   const { supabase, activeBoardId, tenantId, userId, state, members } = useBoard();
 
-  const { data, loading, error, setError } = useEmbeddedPanelData<RecurringTaskTemplate[]>(
+  // Antes había un segundo useState<RecurringTaskTemplate[]> espejando
+  // `data` vía un useEffect — doble fuente de verdad sin necesidad, ya que
+  // el hook expone setData directamente (mismo patrón que ya usan
+  // PortfolioPanel/WorkloadPanel, los otros 2 consumidores de
+  // useEmbeddedPanelData, verificado antes de tocar esto — Fase 2 Tarea 7
+  // del plan de 2026-09-04). El guard `creating || loading` en handleCreate
+  // se mantiene: la carrera real (el fetch inicial resolviendo después de
+  // una mutación optimista) es inherente a tener un solo fetch en vuelo al
+  // montar, no al espejo local que se elimina aquí.
+  const { data, loading, error, setError, setData } = useEmbeddedPanelData<RecurringTaskTemplate[]>(
     () => fetchRecurringTaskTemplates(supabase, activeBoardId!),
     [supabase, activeBoardId],
     { skip: !activeBoardId, errorMessage: "No se pudieron cargar las tareas recurrentes." }
   );
-  const [templates, setTemplates] = useState<RecurringTaskTemplate[]>([]);
-  useEffect(() => {
-    if (data) setTemplates(data);
-  }, [data]);
+  const templates = data ?? [];
 
   const [title, setTitle] = useState("");
   const [columnId, setColumnId] = useState("");
@@ -103,7 +109,7 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
         },
         userId
       );
-      setTemplates((prev) => [created, ...prev]);
+      setData((prev) => [created, ...(prev ?? [])]);
       setTitle("");
       setStartDate("");
     } catch (err) {
@@ -116,7 +122,7 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
   async function handleToggle(tpl: RecurringTaskTemplate) {
     try {
       await toggleRecurringTaskTemplate(supabase, tpl.id, !tpl.active);
-      setTemplates((prev) => prev.map((t) => (t.id === tpl.id ? { ...t, active: !t.active } : t)));
+      setData((prev) => (prev ?? []).map((t) => (t.id === tpl.id ? { ...t, active: !t.active } : t)));
     } catch (err) {
       console.error("No se pudo actualizar la tarea recurrente:", err);
     }
@@ -125,7 +131,7 @@ export default function RecurringTasksPanel({ onClose, embedded = false }: Recur
   async function handleDelete(id: string) {
     try {
       await deleteRecurringTaskTemplate(supabase, id);
-      setTemplates((prev) => prev.filter((t) => t.id !== id));
+      setData((prev) => (prev ?? []).filter((t) => t.id !== id));
     } catch (err) {
       console.error("No se pudo eliminar la tarea recurrente:", err);
     }
