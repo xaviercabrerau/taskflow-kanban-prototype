@@ -3,29 +3,10 @@
 import { useEffect, useRef, useState } from "react";
 import { ColumnData, Priority, Task, dueBadge } from "@/lib/types";
 import { useBoard } from "@/context/BoardContext";
-import { useAdminData } from "@/context/AdminDataContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import { fetchComments, addComment, type TaskComment } from "@/lib/supabase/comments-repo";
 import type { OrgMember } from "@/lib/supabase/members-repo";
-import {
-  fetchAttachments,
-  uploadAttachment,
-  deleteAttachment,
-  getAttachmentSignedUrl,
-  type TaskAttachment,
-} from "@/lib/supabase/attachments-repo";
 import { fetchActivity, describeActivity, type TaskActivity } from "@/lib/supabase/activity-repo";
-import type { Database } from "@/lib/supabase/database.types";
-import { openDrivePicker } from "@/lib/google/picker-client";
-import {
-  fetchChecklists,
-  createChecklist,
-  deleteChecklist,
-  addChecklistItem,
-  toggleChecklistItem,
-  deleteChecklistItem,
-  type Checklist,
-} from "@/lib/supabase/checklist-repo";
 import {
   fetchOrgTags,
   fetchTaskTags,
@@ -43,14 +24,9 @@ import TaskTimeSection from "./TaskTimeSection";
 import TaskForwardEmailSection from "./TaskForwardEmailSection";
 import TaskMeetingSection from "./TaskMeetingSection";
 import TaskShareSection from "./TaskShareSection";
+import TaskChecklistSection from "./TaskChecklistSection";
+import TaskAttachmentsSection from "./TaskAttachmentsSection";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
-
-function formatFileSize(bytes: number | null): string {
-  if (bytes == null) return "";
-  if (bytes < 1024) return `${bytes} B`;
-  if (bytes < 1024 * 1024) return `${(bytes / 1024).toFixed(1)} KB`;
-  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
-}
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es-EC", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -82,7 +58,6 @@ export default function TaskModal({
   onOpenTask,
 }: TaskModalProps) {
   const { can, supabase, userId, tenantId, members, state, addTask, activeBoardId } = useBoard();
-  const { integrations } = useAdminData();
   const [title, setTitle] = useState(initial?.title ?? "");
   const [priority, setPriority] = useState<Priority>(initial?.priority ?? "medium");
   const [assignee, setAssignee] = useState(initial?.assignee ?? "");
@@ -97,10 +72,6 @@ export default function TaskModal({
   useDialogA11y(modalRef, onClose);
 
   const taskId = mode === "edit" ? initial?.id : undefined;
-
-  const googleConnected = integrations.some(
-    (i) => i.provider === "google" && i.hasCredential && i.isActive
-  );
 
   // `members` se carga de forma asíncrona en BoardContext y puede seguir
   // vacío cuando este modal se monta (loading=false no espera a members).
@@ -126,14 +97,6 @@ export default function TaskModal({
   const [activeMentionIndex, setActiveMentionIndex] = useState(0);
   const commentTextareaRef = useRef<HTMLTextAreaElement>(null);
 
-  const [attachments, setAttachments] = useState<TaskAttachment[]>([]);
-  const [driveLink, setDriveLink] = useState("");
-  const [attachingDrive, setAttachingDrive] = useState(false);
-  const [pickerAttaching, setPickerAttaching] = useState(false);
-  const [attachmentsLoading, setAttachmentsLoading] = useState(Boolean(taskId));
-  const [attachmentsError, setAttachmentsError] = useState<string | null>(null);
-  const [uploading, setUploading] = useState(false);
-
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
   const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
@@ -141,14 +104,6 @@ export default function TaskModal({
   const [linkDirection, setLinkDirection] = useState<"blocked_by" | "blocks">("blocked_by");
   const [linkingBusy, setLinkingBusy] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
-
-  const [checklists, setChecklists] = useState<Checklist[]>([]);
-  const [checklistsLoading, setChecklistsLoading] = useState(Boolean(taskId));
-  const [checklistError, setChecklistError] = useState<string | null>(null);
-  const [newChecklistTitle, setNewChecklistTitle] = useState("");
-  const [newItemLabel, setNewItemLabel] = useState<Record<string, string>>({});
-  const [addingChecklist, setAddingChecklist] = useState(false);
-  const [addingItemIds, setAddingItemIds] = useState<Set<string>>(new Set());
 
   const [orgTags, setOrgTags] = useState<Tag[]>([]);
   const [taskTags, setTaskTags] = useState<Tag[]>([]);
@@ -221,44 +176,6 @@ export default function TaskModal({
         if (!cancelled) setCommentsLoading(false);
       });
 
-    fetchAttachments(supabase, taskId)
-      .then((data) => {
-        // Same merge rationale as fetchComments above — see that comment.
-        if (!cancelled) {
-          setAttachments((prev) => {
-            const ids = new Set(data.map((a) => a.id));
-            const localOnly = prev.filter((a) => !ids.has(a.id));
-            return [...localOnly, ...data];
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar los adjuntos:", err);
-        if (!cancelled) setAttachmentsError("No se pudieron cargar los adjuntos.");
-      })
-      .finally(() => {
-        if (!cancelled) setAttachmentsLoading(false);
-      });
-
-    fetchChecklists(supabase, taskId)
-      .then((data) => {
-        // Same merge rationale as fetchComments above — see that comment.
-        if (!cancelled) {
-          setChecklists((prev) => {
-            const ids = new Set(data.map((c) => c.id));
-            const localOnly = prev.filter((c) => !ids.has(c.id));
-            return [...data, ...localOnly];
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar los checklists:", err);
-        if (!cancelled) setChecklistError("No se pudieron cargar los checklists.");
-      })
-      .finally(() => {
-        if (!cancelled) setChecklistsLoading(false);
-      });
-
     Promise.all([fetchOrgTags(supabase, tenantId ?? ""), fetchTaskTags(supabase, taskId)])
       .then(([allTags, currentTags]) => {
         // orgTags is a plain catalog replace (no local-only-add race, tags
@@ -308,12 +225,14 @@ export default function TaskModal({
 
   // Reunión, Compartir, GitHub y Tiempo son secciones minoritarias — la
   // mayoría de usuarios nunca las abre en una sesión dada. Cada una carga
-  // sus propios datos con un pequeño delay para no competir con los ~6
-  // fetches "core" de arriba (comments/attachments/checklists/tags/
-  // activity/links) por ancho de banda justo cuando el modal recién se
-  // vuelve interactivo (AUDITORIA_2026-09-03.md, hallazgo 10) — ver
-  // TaskGithubSection.tsx/TaskTimeSection.tsx/TaskMeetingSection.tsx/
-  // TaskShareSection.tsx (Tarea 9 del plan de 2026-09-04).
+  // sus propios datos con un pequeño delay para no competir con los fetches
+  // "core" de arriba (comments/tags/activity/links) por ancho de banda
+  // justo cuando el modal recién se vuelve interactivo
+  // (AUDITORIA_2026-09-03.md, hallazgo 10). Adjuntos y Checklist también
+  // cargan los suyos por su cuenta, pero de inmediato (siguen siendo
+  // "core") — ver TaskGithubSection.tsx/TaskTimeSection.tsx/
+  // TaskMeetingSection.tsx/TaskShareSection.tsx/TaskChecklistSection.tsx/
+  // TaskAttachmentsSection.tsx (Tarea 9 del plan de 2026-09-04).
 
   const mentionMatches: OrgMember[] =
     mentionState !== null
@@ -398,138 +317,6 @@ export default function TaskModal({
     } catch (err) {
       console.error("No se pudo agregar el comentario:", err);
       setCommentsError("No se pudo agregar el comentario.");
-    }
-  }
-
-  async function handleUploadFile(e: React.ChangeEvent<HTMLInputElement>) {
-    const file = e.target.files?.[0];
-    e.target.value = "";
-    if (!file || !taskId || !tenantId) return;
-    setUploading(true);
-    try {
-      const created = await uploadAttachment(supabase, tenantId, taskId, file, userId);
-      setAttachments((prev) => [created, ...prev]);
-      setAttachmentsError(null);
-    } catch (err) {
-      console.error("No se pudo subir el adjunto:", err);
-      setAttachmentsError("No se pudo subir el archivo.");
-    } finally {
-      setUploading(false);
-    }
-  }
-
-  async function handleDeleteAttachment(attachment: TaskAttachment) {
-    try {
-      await deleteAttachment(supabase, attachment.id, attachment.storagePath, attachment.source);
-      setAttachments((prev) => prev.filter((a) => a.id !== attachment.id));
-    } catch (err) {
-      console.error("No se pudo eliminar el adjunto:", err);
-      setAttachmentsError("No se pudo eliminar el archivo.");
-    }
-  }
-
-  async function handleDownloadAttachment(attachment: TaskAttachment) {
-    if (attachment.source === "google_drive") {
-      if (attachment.externalUrl) {
-        window.open(attachment.externalUrl, "_blank", "noopener,noreferrer");
-      }
-      return;
-    }
-    try {
-      const url = await getAttachmentSignedUrl(supabase, attachment.storagePath);
-      window.open(url, "_blank", "noopener,noreferrer");
-    } catch (err) {
-      console.error("No se pudo generar el enlace de descarga:", err);
-      setAttachmentsError("No se pudo generar el enlace de descarga.");
-    }
-  }
-
-  async function handleAttachDriveLink(e: React.FormEvent) {
-    e.preventDefault();
-    const link = driveLink.trim();
-    if (!link || !taskId || attachingDrive) return;
-    setAttachingDrive(true);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/drive-attachment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ shareLink: link }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudo adjuntar el archivo.");
-      }
-      const row = json.attachment as Database["public"]["Tables"]["attachments"]["Row"];
-      setAttachments((prev) => [
-        {
-          id: row.id,
-          taskId: row.task_id,
-          fileName: row.file_name,
-          storagePath: row.file_url,
-          externalUrl: row.external_url,
-          source: row.source === "google_drive" ? "google_drive" : "upload",
-          fileSizeBytes: row.file_size_bytes,
-          mimeType: row.mime_type,
-          uploadedBy: row.uploaded_by,
-          createdAt: row.created_at,
-        },
-        ...prev,
-      ]);
-      setDriveLink("");
-      setAttachmentsError(null);
-    } catch (err) {
-      setAttachmentsError(err instanceof Error ? err.message : "No se pudo adjuntar el archivo.");
-    } finally {
-      setAttachingDrive(false);
-    }
-  }
-
-  async function handlePickFromDrive() {
-    if (!taskId || pickerAttaching) return;
-    setPickerAttaching(true);
-    setAttachmentsError(null);
-    try {
-      const picked = await openDrivePicker();
-      if (!picked) return; // cancelled — not an error
-      const res = await fetch(`/api/tasks/${taskId}/drive-attachment`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ fileIds: picked.fileIds }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudieron adjuntar los archivos.");
-      }
-      const rows = json.attachments as Database["public"]["Tables"]["attachments"]["Row"][];
-      const errors = json.errors as { fileId: string; error: string }[];
-      if (rows.length > 0) {
-        setAttachments((prev) => [
-          ...rows.map((row) => ({
-            id: row.id,
-            taskId: row.task_id,
-            fileName: row.file_name,
-            storagePath: row.file_url,
-            externalUrl: row.external_url,
-            source: row.source === "google_drive" ? ("google_drive" as const) : ("upload" as const),
-            fileSizeBytes: row.file_size_bytes,
-            mimeType: row.mime_type,
-            uploadedBy: row.uploaded_by,
-            createdAt: row.created_at,
-          })),
-          ...prev,
-        ]);
-      }
-      if (errors.length > 0) {
-        setAttachmentsError(
-          errors.length === picked.fileIds.length
-            ? "No se pudo adjuntar ningún archivo."
-            : `${errors.length} de ${picked.fileIds.length} archivo(s) no se pudieron adjuntar.`
-        );
-      }
-    } catch (err) {
-      setAttachmentsError(err instanceof Error ? err.message : "No se pudieron adjuntar los archivos.");
-    } finally {
-      setPickerAttaching(false);
     }
   }
 
@@ -635,92 +422,6 @@ export default function TaskModal({
       setTaskLinks((prev) => prev.filter((l) => l.id !== linkId));
     } catch (err) {
       setLinkError(err instanceof Error ? err.message : "No se pudo eliminar la dependencia.");
-    }
-  }
-
-  async function handleAddChecklist(e: React.FormEvent) {
-    e.preventDefault();
-    if (!taskId || !newChecklistTitle.trim() || addingChecklist) return;
-    setAddingChecklist(true);
-    try {
-      const created = await createChecklist(supabase, taskId, newChecklistTitle.trim(), checklists.length);
-      setChecklists((prev) => [...prev, created]);
-      setNewChecklistTitle("");
-      setChecklistError(null);
-    } catch (err) {
-      console.error("No se pudo crear el checklist:", err);
-      setChecklistError("No se pudo crear el checklist.");
-    } finally {
-      setAddingChecklist(false);
-    }
-  }
-
-  async function handleDeleteChecklist(checklistId: string) {
-    try {
-      await deleteChecklist(supabase, checklistId);
-      setChecklists((prev) => prev.filter((c) => c.id !== checklistId));
-    } catch (err) {
-      console.error("No se pudo eliminar el checklist:", err);
-      setChecklistError("No se pudo eliminar el checklist.");
-    }
-  }
-
-  async function handleAddItem(checklistId: string) {
-    const label = (newItemLabel[checklistId] ?? "").trim();
-    if (!label || addingItemIds.has(checklistId)) return;
-    const checklist = checklists.find((c) => c.id === checklistId);
-    if (!checklist) return;
-    setAddingItemIds((prev) => new Set(prev).add(checklistId));
-    try {
-      const created = await addChecklistItem(supabase, checklistId, label, checklist.items.length);
-      setChecklists((prev) =>
-        prev.map((c) => (c.id === checklistId ? { ...c, items: [...c.items, created] } : c))
-      );
-      setNewItemLabel((prev) => ({ ...prev, [checklistId]: "" }));
-    } catch (err) {
-      console.error("No se pudo agregar el ítem:", err);
-      setChecklistError("No se pudo agregar el ítem.");
-    } finally {
-      setAddingItemIds((prev) => {
-        const next = new Set(prev);
-        next.delete(checklistId);
-        return next;
-      });
-    }
-  }
-
-  async function handleToggleItem(checklistId: string, itemId: string, isDone: boolean) {
-    setChecklists((prev) =>
-      prev.map((c) =>
-        c.id === checklistId
-          ? { ...c, items: c.items.map((i) => (i.id === itemId ? { ...i, isDone } : i)) }
-          : c
-      )
-    );
-    try {
-      await toggleChecklistItem(supabase, itemId, isDone);
-    } catch (err) {
-      console.error("No se pudo actualizar el ítem:", err);
-      setChecklistError("No se pudo actualizar el ítem.");
-      setChecklists((prev) =>
-        prev.map((c) =>
-          c.id === checklistId
-            ? { ...c, items: c.items.map((i) => (i.id === itemId ? { ...i, isDone: !isDone } : i)) }
-            : c
-        )
-      );
-    }
-  }
-
-  async function handleDeleteItem(checklistId: string, itemId: string) {
-    try {
-      await deleteChecklistItem(supabase, itemId);
-      setChecklists((prev) =>
-        prev.map((c) => (c.id === checklistId ? { ...c, items: c.items.filter((i) => i.id !== itemId) } : c))
-      );
-    } catch (err) {
-      console.error("No se pudo eliminar el ítem:", err);
-      setChecklistError("No se pudo eliminar el ítem.");
     }
   }
 
@@ -1172,159 +873,9 @@ export default function TaskModal({
 
               {taskId && <TaskTimeSection taskId={taskId} />}
 
-              <div className="field task-section">
-                <label>Checklist</label>
-                {checklistError ? <p role="alert" className="field-error">{checklistError}</p> : null}
-                {checklistsLoading ? (
-                  <p>Cargando checklists…</p>
-                ) : checklists.length === 0 ? (
-                  <p>Sin checklists todavía.</p>
-                ) : (
-                  checklists.map((checklist) => {
-                    const total = checklist.items.length;
-                    const done = checklist.items.filter((i) => i.isDone).length;
-                    const pct = total ? Math.round((done / total) * 100) : 0;
-                    return (
-                      <div key={checklist.id} className="checklist-block">
-                        <div className="checklist-head">
-                          <span className="checklist-title">{checklist.title}</span>
-                          <button type="button" className="btn danger" onClick={() => handleDeleteChecklist(checklist.id)}>
-                            Eliminar
-                          </button>
-                        </div>
-                        <div className="checklist-progress-row">
-                          <span className="checklist-pct">{pct}%</span>
-                          <div className="checklist-progress-track">
-                            <div className="checklist-progress-fill" style={{ transform: `scaleX(${pct / 100})` }} />
-                          </div>
-                        </div>
-                        <ul className="checklist-item-list">
-                          {checklist.items.map((item) => (
-                            <li key={item.id} className="checklist-item">
-                              <label className={item.isDone ? "checklist-item-done" : undefined}>
-                                <input
-                                  type="checkbox"
-                                  checked={item.isDone}
-                                  onChange={(e) => handleToggleItem(checklist.id, item.id, e.target.checked)}
-                                />
-                                {item.label}
-                              </label>
-                              <button
-                                type="button"
-                                className="icon-btn"
-                                aria-label="Eliminar ítem"
-                                onClick={() => handleDeleteItem(checklist.id, item.id)}
-                              >
-                                ✕
-                              </button>
-                            </li>
-                          ))}
-                        </ul>
-                        <div className="checklist-add-item-row">
-                          <input
-                            value={newItemLabel[checklist.id] ?? ""}
-                            onChange={(e) =>
-                              setNewItemLabel((prev) => ({ ...prev, [checklist.id]: e.target.value }))
-                            }
-                            placeholder="Añada un elemento"
-                            onKeyDown={(e) => {
-                              if (e.key === "Enter") {
-                                e.preventDefault();
-                                handleAddItem(checklist.id);
-                              }
-                            }}
-                          />
-                          <button
-                            type="button"
-                            className="btn"
-                            onClick={() => handleAddItem(checklist.id)}
-                            disabled={addingItemIds.has(checklist.id)}
-                          >
-                            Añadir
-                          </button>
-                        </div>
-                      </div>
-                    );
-                  })
-                )}
-                <div className="checklist-add-item-row">
-                  <input
-                    value={newChecklistTitle}
-                    onChange={(e) => setNewChecklistTitle(e.target.value)}
-                    placeholder="Nombre del checklist"
-                  />
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={handleAddChecklist}
-                    disabled={!newChecklistTitle.trim() || checklistsLoading || addingChecklist}
-                  >
-                    + Añadir checklist
-                  </button>
-                </div>
-              </div>
+              {taskId && <TaskChecklistSection taskId={taskId} />}
 
-              <div className="field task-section">
-                <label>Adjuntos</label>
-                {attachmentsError ? <p role="alert" className="field-error">{attachmentsError}</p> : null}
-                <input
-                  className="attachment-file-input"
-                  type="file"
-                  onChange={handleUploadFile}
-                  disabled={uploading}
-                />
-                <div className="comment-input-wrap">
-                  <input
-                    value={driveLink}
-                    onChange={(e) => setDriveLink(e.target.value)}
-                    placeholder="Pega un enlace de Google Drive para adjuntarlo"
-                    disabled={attachingDrive}
-                  />
-                  <button
-                    type="button"
-                    className="btn"
-                    onClick={handleAttachDriveLink}
-                    disabled={!driveLink.trim() || attachingDrive}
-                  >
-                    {attachingDrive ? "Adjuntando…" : "Adjuntar de Drive"}
-                  </button>
-                </div>
-                {googleConnected && (
-                  <button
-                    type="button"
-                    className="btn"
-                    style={{ marginTop: 12 }}
-                    onClick={handlePickFromDrive}
-                    disabled={pickerAttaching}
-                  >
-                    {pickerAttaching ? "Abriendo Drive…" : "📁 Elegir de Google Drive"}
-                  </button>
-                )}
-                {attachmentsLoading ? (
-                  <p>Cargando adjuntos…</p>
-                ) : attachments.length === 0 ? (
-                  <p>Sin adjuntos todavía.</p>
-                ) : (
-                  <ul className="attachment-list">
-                    {attachments.map((a) => (
-                      <li key={a.id} className="attachment-item">
-                        <span className="attachment-name">
-                          {a.source === "google_drive" ? "📁 " : ""}
-                          {a.fileName} {a.fileSizeBytes != null ? `(${formatFileSize(a.fileSizeBytes)})` : ""}
-                        </span>
-                        <span style={{ display: "flex", gap: 6 }}>
-                          <button type="button" className="btn" onClick={() => handleDownloadAttachment(a)}>
-                            Descargar
-                          </button>
-                          <button type="button" className="btn danger" onClick={() => handleDeleteAttachment(a)}>
-                            Eliminar
-                          </button>
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {taskId && <TaskAttachmentsSection taskId={taskId} />}
 
               {taskId && <TaskForwardEmailSection taskId={taskId} />}
 
