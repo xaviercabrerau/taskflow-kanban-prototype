@@ -5,16 +5,29 @@ jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(),
 }));
 
+// POST creates the auth user via the service-role client (auth.admin.createUser),
+// same pattern as /api/admin/create-user/route.ts — mocked separately from the
+// request-scoped client above since it's constructed directly from
+// @supabase/supabase-js with SUPABASE_SERVICE_ROLE_KEY, not via @/lib/supabase/server.
+jest.mock('@supabase/supabase-js', () => ({
+  createClient: jest.fn(),
+}));
+
 import { GET as getUsers, POST as createUser } from '../route';
 import { createClient } from '@/lib/supabase/server';
+import { createClient as createServiceClient } from '@supabase/supabase-js';
 
 describe('API: /api/admin/users (GET & POST)', () => {
   // eslint-disable-next-line @typescript-eslint/no-explicit-any -- chainable Supabase query builder mock; typing the full chain is impractical for a test fixture
   let mockSupabase: any;
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any -- service-role admin client mock (auth.admin.createUser + from()), same rationale as mockSupabase
+  let mockAdminSupabase: any;
   let mockRequest: Request;
 
   beforeEach(() => {
     jest.clearAllMocks();
+    process.env.SUPABASE_SERVICE_ROLE_KEY = 'test-service-role-key';
+    process.env.NEXT_PUBLIC_SUPABASE_URL = 'https://test.supabase.co';
 
     mockSupabase = {
       auth: {
@@ -24,6 +37,24 @@ describe('API: /api/admin/users (GET & POST)', () => {
     };
 
     (createClient as jest.Mock).mockResolvedValue(mockSupabase);
+
+    mockAdminSupabase = {
+      auth: {
+        admin: {
+          createUser: jest.fn().mockResolvedValue({
+            data: { user: { id: 'new-user-123', created_at: '2026-01-01T00:00:00.000Z' } },
+            error: null,
+          }),
+        },
+      },
+      from: jest.fn().mockReturnValue({
+        insert: jest.fn().mockResolvedValue({ error: null }),
+        update: jest.fn().mockReturnThis(),
+        eq: jest.fn().mockResolvedValue({ error: null }),
+      }),
+    };
+
+    (createServiceClient as jest.Mock).mockReturnValue(mockAdminSupabase);
   });
 
   describe('GET /api/admin/users', () => {

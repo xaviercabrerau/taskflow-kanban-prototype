@@ -1,4 +1,6 @@
+import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import type { Database } from "@/lib/supabase/database.types";
 
 interface OrganizationMemberRow {
   user_id: string;
@@ -123,22 +125,74 @@ export async function POST(request: Request) {
     return Response.json({ error: "Only organization owners can create users" }, { status: 403 });
   }
 
-  // Generate temporary password
+  const serviceRoleKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
+  const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
+  if (!serviceRoleKey || !supabaseUrl) {
+    return Response.json(
+      { error: "El servidor no tiene configurado SUPABASE_SERVICE_ROLE_KEY. Agrégalo en las variables de entorno." },
+      { status: 500 }
+    );
+  }
+  const admin = createServiceClient<Database>(supabaseUrl, serviceRoleKey);
+
+  // Genera una contraseña temporal real y crea la cuenta ya confirmada
+  // (email_confirm: true) — antes esta ruta solo generaba esta misma
+  // contraseña y devolvía un 200 falso sin llamar nunca a Supabase Auth
+  // (comentario original: "Simulate creating user"), así que el usuario
+  // creado en /admin/usuarios nunca existía de verdad y el login fallaba
+  // con "Invalid login credentials". Mismo patrón que
+  // /api/admin/create-user/route.ts, que sí funciona correctamente.
   const tempPassword = Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 5).toUpperCase();
 
-  // Simulate creating user (in real implementation, would call auth endpoint)
-  // For now, return success with generated password
+  const { data: created, error: createError } = await admin.auth.admin.createUser({
+    email,
+    password: tempPassword,
+    email_confirm: true,
+    user_metadata: {
+      ...(name ? { full_name: name } : {}),
+      must_change_password: true,
+    },
+  });
+  if (createError || !created.user) {
+    return Response.json({ error: createError?.message ?? "No se pudo crear el usuario." }, { status: 400 });
+  }
+
+  // clientIds no tiene equivalente en el modelo de datos real de TaskFlow
+  // (era parte del scaffolding genérico de este endpoint) — se ignora.
+  void clientIds;
+
+  // org_role solo admite 'owner'|'admin'|'member'|'guest' (constraint de
+  // organization_members) — mapear los 3 roles que ofrece el diálogo.
+  const orgRole = role === "admin" ? "admin" : role === "viewer" ? "guest" : "member";
+
+  const { error: memberError } = await admin
+    .from("organization_members")
+    .insert({ organization_id: membership.organization_id, user_id: created.user.id, org_role: orgRole });
+  if (memberError) {
+    return Response.json(
+      { error: `Usuario creado, pero no se pudo añadir a la organización: ${memberError.message}` },
+      { status: 500 }
+    );
+  }
+
+  if (name) {
+    const { error: profileError } = await admin.from("profiles").update({ full_name: name }).eq("id", created.user.id);
+    if (profileError) {
+      console.error("POST /api/admin/users: failed to update profile full_name", profileError);
+    }
+  }
+
   return Response.json(
     {
-      id: "temp-" + Date.now(),
+      id: created.user.id,
       email,
-      name,
+      name: name || "Unknown",
       role,
       status: "active",
       lastLogin: null,
-      createdAt: new Date().toISOString(),
-      updatedAt: new Date().toISOString(),
-      assignedClientIds: clientIds,
+      createdAt: created.user.created_at,
+      updatedAt: created.user.created_at,
+      assignedClientIds: [],
       password: tempPassword,
     },
     { status: 200 }
