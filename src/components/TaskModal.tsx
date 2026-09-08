@@ -6,15 +6,6 @@ import { useBoard } from "@/context/BoardContext";
 import { useDialogA11y } from "@/hooks/useDialogA11y";
 import { fetchComments, addComment, type TaskComment } from "@/lib/supabase/comments-repo";
 import type { OrgMember } from "@/lib/supabase/members-repo";
-import { fetchActivity, describeActivity, type TaskActivity } from "@/lib/supabase/activity-repo";
-import {
-  fetchOrgTags,
-  fetchTaskTags,
-  createTag,
-  addTagToTask,
-  removeTagFromTask,
-  type Tag,
-} from "@/lib/supabase/tags-repo";
 import { generateTempId } from "@/lib/tempId";
 import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
 import { fetchEpics, type Epic } from "@/lib/supabase/epics-repo";
@@ -26,7 +17,8 @@ import TaskMeetingSection from "./TaskMeetingSection";
 import TaskShareSection from "./TaskShareSection";
 import TaskChecklistSection from "./TaskChecklistSection";
 import TaskAttachmentsSection from "./TaskAttachmentsSection";
-const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
+import TaskTagsSection from "./TaskTagsSection";
+import TaskActivitySection from "./TaskActivitySection";
 
 function formatDateTime(iso: string): string {
   return new Date(iso).toLocaleString("es-EC", { day: "numeric", month: "short", hour: "2-digit", minute: "2-digit" });
@@ -105,28 +97,10 @@ export default function TaskModal({
   const [linkingBusy, setLinkingBusy] = useState(false);
   const [linkError, setLinkError] = useState<string | null>(null);
 
-  const [orgTags, setOrgTags] = useState<Tag[]>([]);
-  const [taskTags, setTaskTags] = useState<Tag[]>([]);
-  const [tagsLoading, setTagsLoading] = useState(Boolean(taskId));
-  const [tagsError, setTagsError] = useState<string | null>(null);
-  const [showTagPicker, setShowTagPicker] = useState(false);
-  const [newTagName, setNewTagName] = useState("");
-  const [newTagColor, setNewTagColor] = useState(TAG_COLOR_OPTIONS[0]);
-  const [creatingTag, setCreatingTag] = useState(false);
-  const [pendingTagIds, setPendingTagIds] = useState<Set<string>>(new Set());
-
-  const [activity, setActivity] = useState<TaskActivity[]>([]);
-  const [activityLoading, setActivityLoading] = useState(Boolean(taskId));
-  const [activityError, setActivityError] = useState<string | null>(null);
-
   function authorName(authorId: string | null): string {
     if (!authorId) return "Automatización";
     const member = members.find((m) => m.userId === authorId);
     return member?.fullName || member?.email || "Usuario";
-  }
-
-  function resolveColumnName(colId: string): string | undefined {
-    return columns.find((c) => c.id === colId)?.title;
   }
 
   // Épicas/sprints son catálogos por tablero, no por tarea — se cargan
@@ -176,40 +150,6 @@ export default function TaskModal({
         if (!cancelled) setCommentsLoading(false);
       });
 
-    Promise.all([fetchOrgTags(supabase, tenantId ?? ""), fetchTaskTags(supabase, taskId)])
-      .then(([allTags, currentTags]) => {
-        // orgTags is a plain catalog replace (no local-only-add race, tags
-        // are created via a separate org-wide flow, not this task's modal).
-        // taskTags gets the same merge rationale as fetchComments above.
-        if (!cancelled) {
-          setOrgTags(allTags);
-          setTaskTags((prev) => {
-            const ids = new Set(currentTags.map((t) => t.id));
-            const localOnly = prev.filter((t) => !ids.has(t.id));
-            return [...currentTags, ...localOnly];
-          });
-        }
-      })
-      .catch((err) => {
-        console.error("No se pudieron cargar las etiquetas:", err);
-        if (!cancelled) setTagsError("No se pudieron cargar las etiquetas.");
-      })
-      .finally(() => {
-        if (!cancelled) setTagsLoading(false);
-      });
-
-    fetchActivity(supabase, taskId)
-      .then((data) => {
-        if (!cancelled) setActivity(data);
-      })
-      .catch((err) => {
-        console.error("No se pudo cargar el historial de actividad:", err);
-        if (!cancelled) setActivityError("No se pudo cargar el historial de actividad.");
-      })
-      .finally(() => {
-        if (!cancelled) setActivityLoading(false);
-      });
-
     fetchTaskLinks(supabase, taskId)
       .then((links) => {
         if (!cancelled) setTaskLinks(links);
@@ -226,13 +166,14 @@ export default function TaskModal({
   // Reunión, Compartir, GitHub y Tiempo son secciones minoritarias — la
   // mayoría de usuarios nunca las abre en una sesión dada. Cada una carga
   // sus propios datos con un pequeño delay para no competir con los fetches
-  // "core" de arriba (comments/tags/activity/links) por ancho de banda
-  // justo cuando el modal recién se vuelve interactivo
-  // (AUDITORIA_2026-09-03.md, hallazgo 10). Adjuntos y Checklist también
-  // cargan los suyos por su cuenta, pero de inmediato (siguen siendo
-  // "core") — ver TaskGithubSection.tsx/TaskTimeSection.tsx/
-  // TaskMeetingSection.tsx/TaskShareSection.tsx/TaskChecklistSection.tsx/
-  // TaskAttachmentsSection.tsx (Tarea 9 del plan de 2026-09-04).
+  // "core" de arriba (comments/links) por ancho de banda justo cuando el
+  // modal recién se vuelve interactivo (AUDITORIA_2026-09-03.md, hallazgo
+  // 10). Adjuntos, Checklist, Etiquetas y Actividad también cargan los
+  // suyos por su cuenta, pero de inmediato (siguen siendo "core") — ver
+  // TaskGithubSection.tsx/TaskTimeSection.tsx/TaskMeetingSection.tsx/
+  // TaskShareSection.tsx/TaskChecklistSection.tsx/
+  // TaskAttachmentsSection.tsx/TaskTagsSection.tsx/TaskActivitySection.tsx
+  // (Tarea 9 del plan de 2026-09-04).
 
   const mentionMatches: OrgMember[] =
     mentionState !== null
@@ -425,50 +366,6 @@ export default function TaskModal({
     }
   }
 
-  async function handleToggleTag(tag: Tag) {
-    if (!taskId || pendingTagIds.has(tag.id)) return;
-    const isAttached = taskTags.some((t) => t.id === tag.id);
-    setPendingTagIds((prev) => new Set(prev).add(tag.id));
-    try {
-      if (isAttached) {
-        await removeTagFromTask(supabase, taskId, tag.id);
-        setTaskTags((prev) => prev.filter((t) => t.id !== tag.id));
-      } else {
-        await addTagToTask(supabase, taskId, tag.id);
-        setTaskTags((prev) => [...prev, tag]);
-      }
-      setTagsError(null);
-    } catch (err) {
-      console.error("No se pudo actualizar la etiqueta:", err);
-      setTagsError("No se pudo actualizar la etiqueta.");
-    } finally {
-      setPendingTagIds((prev) => {
-        const next = new Set(prev);
-        next.delete(tag.id);
-        return next;
-      });
-    }
-  }
-
-  async function handleCreateTag(e: React.FormEvent) {
-    e.preventDefault();
-    if (!taskId || !tenantId || !newTagName.trim() || creatingTag) return;
-    setCreatingTag(true);
-    try {
-      const created = await createTag(supabase, tenantId, newTagName.trim(), newTagColor);
-      setOrgTags((prev) => [...prev, created]);
-      await addTagToTask(supabase, taskId, created.id);
-      setTaskTags((prev) => [...prev, created]);
-      setNewTagName("");
-      setTagsError(null);
-    } catch (err) {
-      console.error("No se pudo crear la etiqueta:", err);
-      setTagsError("No se pudo crear la etiqueta.");
-    } finally {
-      setCreatingTag(false);
-    }
-  }
-
   function handleSubmit(e: React.FormEvent) {
     e.preventDefault();
     if (!title.trim()) return;
@@ -639,76 +536,7 @@ export default function TaskModal({
 
           {taskId ? (
             <>
-              <div className="field task-section">
-                <label>Etiquetas</label>
-                {tagsError ? <p role="alert" className="field-error">{tagsError}</p> : null}
-                {tagsLoading ? (
-                  <p>Cargando etiquetas…</p>
-                ) : (
-                  <div className="tag-pill-row">
-                    {taskTags.map((t) => (
-                      <button
-                        type="button"
-                        key={t.id}
-                        className="tag-pill"
-                        style={{ background: `var(${t.color ?? "--muted"}-soft)`, color: `var(${t.color ?? "--muted"})` }}
-                        onClick={() => handleToggleTag(t)}
-                        title="Quitar etiqueta"
-                      >
-                        {t.name} ✕
-                      </button>
-                    ))}
-                    <button type="button" className="tag-pill-add" onClick={() => setShowTagPicker((v) => !v)}>
-                      + Etiqueta
-                    </button>
-                  </div>
-                )}
-                {showTagPicker ? (
-                  <div className="tag-picker">
-                    {orgTags
-                      .filter((t) => !taskTags.some((tt) => tt.id === t.id))
-                      .map((t) => (
-                        <button
-                          type="button"
-                          key={t.id}
-                          className="tag-pill"
-                          style={{ background: `var(${t.color ?? "--muted"}-soft)`, color: `var(${t.color ?? "--muted"})` }}
-                          onClick={() => handleToggleTag(t)}
-                        >
-                          {t.name}
-                        </button>
-                      ))}
-                    <div className="tag-create-row">
-                      <input
-                        value={newTagName}
-                        onChange={(e) => setNewTagName(e.target.value)}
-                        placeholder="Nueva etiqueta"
-                      />
-                      <div className="tag-color-swatches" aria-label="Color de la etiqueta">
-                        {TAG_COLOR_OPTIONS.map((c) => (
-                          <button
-                            type="button"
-                            key={c}
-                            aria-pressed={newTagColor === c}
-                            aria-label={c.replace("--", "")}
-                            className={`tag-color-swatch${newTagColor === c ? " selected" : ""}`}
-                            style={{ background: `var(${c})` }}
-                            onClick={() => setNewTagColor(c)}
-                          />
-                        ))}
-                      </div>
-                      <button
-                        type="button"
-                        className="btn"
-                        onClick={handleCreateTag}
-                        disabled={!newTagName.trim() || creatingTag}
-                      >
-                        Crear
-                      </button>
-                    </div>
-                  </div>
-                ) : null}
-              </div>
+              <TaskTagsSection taskId={taskId} />
 
               {parentTask && (
                 <p style={{ fontSize: 12.5, color: "var(--muted)" }}>
@@ -885,26 +713,7 @@ export default function TaskModal({
 
               {taskId && <TaskShareSection taskId={taskId} />}
 
-              <div className="field task-section">
-                <label>Actividad</label>
-                {activityError ? <p role="alert" className="field-error">{activityError}</p> : null}
-                {activityLoading ? (
-                  <p>Cargando actividad…</p>
-                ) : activity.length === 0 ? (
-                  <p>Sin actividad registrada.</p>
-                ) : (
-                  <ul className="activity-list">
-                    {activity.map((a) => (
-                      <li key={a.id} className="activity-item">
-                        <span className="activity-text">{describeActivity(a, resolveColumnName)}</span>
-                        <span className="activity-meta">
-                          {authorName(a.actorId)} · {formatDateTime(a.createdAt)}
-                        </span>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              <TaskActivitySection taskId={taskId} columns={columns} />
 
               <div className="field task-section">
                 <div style={{ display: "flex", alignItems: "center", justifyContent: "space-between" }}>
