@@ -35,11 +35,23 @@ export async function POST(request: NextRequest): Promise<NextResponse> {
     return NextResponse.json({ error: "text y tenantId son requeridos" }, { status: 400 });
   }
 
-  const { data: membership } = await supabase
+  // Filtrar también por user_id (no solo organization_id) es obligatorio:
+  // la política RLS de organization_members deja ver TODAS las filas de la
+  // org a un owner (org_members_select: user_id = auth.uid() OR
+  // is_org_owner(organization_id)). Sin el filtro por user_id, un owner de
+  // una org con 2+ miembros recibía varias filas y .maybeSingle() fallaba
+  // silenciosamente (error descartado) -> membership quedaba undefined ->
+  // 403 "Sin permiso" para el propio dueño de la organización.
+  const { data: membership, error: membershipError } = await supabase
     .from("organization_members")
     .select("organization_id")
     .eq("organization_id", body.tenantId)
+    .eq("user_id", authData.user.id)
     .maybeSingle();
+  if (membershipError) {
+    console.error("Error verificando membresía:", membershipError);
+    return NextResponse.json({ error: "Sin permiso para esta organización" }, { status: 403 });
+  }
   if (!membership) {
     return NextResponse.json({ error: "Sin permiso para esta organización" }, { status: 403 });
   }
