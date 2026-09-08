@@ -481,19 +481,19 @@ a.tab {
 
 .card-drag-handle {
   position: absolute;
-  top: 6px;
-  right: 6px;
-  width: 20px;
-  height: 20px;
+  top: 4px;
+  right: 4px;
+  width: 30px;
+  height: 30px;
   display: flex;
   align-items: center;
   justify-content: center;
   border: none;
-  background: transparent;
+  background: var(--surface-2);
   color: var(--muted, #8a8a8a);
   cursor: grab;
-  border-radius: 4px;
-  font-size: 13px;
+  border-radius: 6px;
+  font-size: 20px;
   line-height: 1;
 }
 .card-drag-handle:hover,
@@ -510,6 +510,10 @@ a.tab {
   font-weight: 650;
   line-height: 1.35;
   margin: 0 0 8px 6px;
+  /* Deja espacio a la derecha para el asa de arrastre (30px + 4px de
+     offset) — si no, un título largo puede envolver su primera línea
+     por debajo del botón de mover. */
+  padding-right: 36px;
 }
 
 .chip-row {
