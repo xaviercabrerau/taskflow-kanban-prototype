@@ -38,17 +38,10 @@ import { fetchTaskMeetInfo } from "@/lib/supabase/meetings-repo";
 import type { ShareLink, SharePermission } from "@/lib/supabase/share-links-repo";
 import { generateTempId } from "@/lib/tempId";
 import { fetchTaskLinks, createTaskLink, deleteTaskLink, type TaskLink } from "@/lib/supabase/task-links-repo";
-import { fetchTaskGithubLinks, deleteTaskGithubLink, type TaskGithubLink } from "@/lib/supabase/github-links-repo";
 import { fetchEpics, type Epic } from "@/lib/supabase/epics-repo";
-import {
-  fetchTaskTimeEntries,
-  startTimer,
-  stopTimer,
-  addManualEntry,
-  deleteTimeEntry,
-  type TimeEntry,
-} from "@/lib/supabase/time-entries-repo";
 import { fetchSprints, type Sprint } from "@/lib/supabase/sprints-repo";
+import TaskGithubSection from "./TaskGithubSection";
+import TaskTimeSection from "./TaskTimeSection";
 const TAG_COLOR_OPTIONS = ["--low", "--medium", "--accent", "--muted", "--high"];
 
 function formatFileSize(bytes: number | null): string {
@@ -148,17 +141,7 @@ export default function TaskModal({
 
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
-  const [timeEntries, setTimeEntries] = useState<TimeEntry[]>([]);
-  const [timerBusy, setTimerBusy] = useState(false);
-  const [manualMinutes, setManualMinutes] = useState("");
-  const [manualNote, setManualNote] = useState("");
-  const [timeError, setTimeError] = useState<string | null>(null);
-
   const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
-  const [githubLinks, setGithubLinks] = useState<TaskGithubLink[]>([]);
-  const [githubUrl, setGithubUrl] = useState("");
-  const [linkingGithub, setLinkingGithub] = useState(false);
-  const [githubError, setGithubError] = useState<string | null>(null);
   const [linkTargetId, setLinkTargetId] = useState("");
   const [linkDirection, setLinkDirection] = useState<"blocked_by" | "blocks">("blocked_by");
   const [linkingBusy, setLinkingBusy] = useState(false);
@@ -347,12 +330,14 @@ export default function TaskModal({
     };
   }, [supabase, taskId, tenantId, activeBoardId]);
 
-  // Reunión, GitHub, Compartir y Tiempo son secciones minoritarias — la
-  // mayoría de usuarios nunca las abre en una sesión dada. Se cargan en un
-  // efecto aparte, con un pequeño delay, para no competir con los ~6 fetches
-  // "core" de arriba (comments/attachments/checklists/tags/activity/links)
-  // por ancho de banda justo cuando el modal recién se vuelve interactivo
-  // (AUDITORIA_2026-09-03.md, hallazgo 10).
+  // Reunión y Compartir son secciones minoritarias — la mayoría de usuarios
+  // nunca las abre en una sesión dada. Se cargan en un efecto aparte, con un
+  // pequeño delay, para no competir con los ~6 fetches "core" de arriba
+  // (comments/attachments/checklists/tags/activity/links) por ancho de
+  // banda justo cuando el modal recién se vuelve interactivo
+  // (AUDITORIA_2026-09-03.md, hallazgo 10). GitHub y Tiempo cargan los
+  // suyos por su cuenta — ver TaskGithubSection.tsx/TaskTimeSection.tsx
+  // (Tarea 9 del plan de 2026-09-04).
   useEffect(() => {
     if (!taskId) return;
     let cancelled = false;
@@ -371,14 +356,6 @@ export default function TaskModal({
           console.error("No se pudo cargar el estado de la reunión:", err);
         });
 
-      fetchTaskGithubLinks(supabase, taskId)
-        .then((links) => {
-          if (!cancelled) setGithubLinks(links);
-        })
-        .catch((err) => {
-          console.error("No se pudieron cargar los links de GitHub:", err);
-        });
-
       fetch(`/api/share-links?boardId=${encodeURIComponent(activeBoardId ?? "")}`)
         .then((res) => res.json())
         .then((json) => {
@@ -388,14 +365,6 @@ export default function TaskModal({
         })
         .catch((err) => {
           console.error("No se pudieron cargar los links compartidos:", err);
-        });
-
-      fetchTaskTimeEntries(supabase, taskId)
-        .then((entries) => {
-          if (!cancelled) setTimeEntries(entries);
-        })
-        .catch((err) => {
-          console.error("No se pudo cargar el tiempo registrado:", err);
         });
     }, 200);
 
@@ -680,52 +649,6 @@ export default function TaskModal({
     }
   }
 
-  async function handleLinkGithub() {
-    if (!taskId || !githubUrl.trim() || linkingGithub) return;
-    setLinkingGithub(true);
-    setGithubError(null);
-    try {
-      const res = await fetch(`/api/tasks/${taskId}/github-link`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ url: githubUrl.trim() }),
-      });
-      const json = await res.json();
-      if (!res.ok) {
-        throw new Error(json.error || "No se pudo vincular el issue/PR.");
-      }
-      const link = json.link;
-      setGithubLinks((prev) => [
-        {
-          id: link.id,
-          taskId: link.task_id,
-          url: link.url,
-          repo: link.repo,
-          number: link.number,
-          kind: link.kind,
-          title: link.title,
-          state: link.state,
-          createdAt: link.created_at,
-        },
-        ...prev,
-      ]);
-      setGithubUrl("");
-    } catch (err) {
-      setGithubError(err instanceof Error ? err.message : "No se pudo vincular el issue/PR.");
-    } finally {
-      setLinkingGithub(false);
-    }
-  }
-
-  async function handleRemoveGithubLink(id: string) {
-    try {
-      await deleteTaskGithubLink(supabase, id);
-      setGithubLinks((prev) => prev.filter((l) => l.id !== id));
-    } catch (err) {
-      console.error("No se pudo quitar el link de GitHub:", err);
-    }
-  }
-
   async function handleCreateShareLink() {
     if (!taskId || !activeBoardId || creatingShare) return;
     setCreatingShare(true);
@@ -867,63 +790,6 @@ export default function TaskModal({
       setTaskLinks((prev) => prev.filter((l) => l.id !== linkId));
     } catch (err) {
       setLinkError(err instanceof Error ? err.message : "No se pudo eliminar la dependencia.");
-    }
-  }
-
-  const runningEntry = timeEntries.find((e) => e.userId === userId && e.endedAt === null);
-  const totalMinutes = timeEntries.reduce((sum, e) => sum + (e.minutes ?? 0), 0);
-
-  async function handleStartTimer() {
-    if (!taskId || !userId || timerBusy) return;
-    setTimerBusy(true);
-    setTimeError(null);
-    try {
-      const created = await startTimer(supabase, taskId, userId);
-      setTimeEntries((prev) => [created, ...prev]);
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "No se pudo iniciar el cronómetro.");
-    } finally {
-      setTimerBusy(false);
-    }
-  }
-
-  async function handleStopTimer() {
-    if (!runningEntry || timerBusy) return;
-    setTimerBusy(true);
-    setTimeError(null);
-    try {
-      const updated = await stopTimer(supabase, runningEntry.id, runningEntry.startedAt);
-      setTimeEntries((prev) => prev.map((e) => (e.id === updated.id ? updated : e)));
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "No se pudo detener el cronómetro.");
-    } finally {
-      setTimerBusy(false);
-    }
-  }
-
-  async function handleAddManualEntry() {
-    const minutes = Number(manualMinutes);
-    if (!taskId || !userId || !minutes || minutes <= 0 || timerBusy) return;
-    setTimerBusy(true);
-    setTimeError(null);
-    try {
-      const created = await addManualEntry(supabase, taskId, userId, Math.round(minutes), manualNote.trim() || null);
-      setTimeEntries((prev) => [created, ...prev]);
-      setManualMinutes("");
-      setManualNote("");
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "No se pudo agregar el registro.");
-    } finally {
-      setTimerBusy(false);
-    }
-  }
-
-  async function handleDeleteTimeEntry(entryId: string) {
-    try {
-      await deleteTimeEntry(supabase, entryId);
-      setTimeEntries((prev) => prev.filter((e) => e.id !== entryId));
-    } catch (err) {
-      setTimeError(err instanceof Error ? err.message : "No se pudo eliminar el registro.");
     }
   }
 
@@ -1459,55 +1325,7 @@ export default function TaskModal({
                 )}
               </div>
 
-              <div className="field task-section">
-                <label>Tiempo</label>
-                {timeError && (
-                  <p role="alert" className="field-error">
-                    {timeError}
-                  </p>
-                )}
-                <p style={{ fontSize: 13.5, marginBottom: 10 }}>
-                  Total registrado: <strong>{Math.round((totalMinutes / 60) * 10) / 10}h</strong>
-                </p>
-                {runningEntry ? (
-                  <button type="button" className="btn danger" onClick={handleStopTimer} disabled={timerBusy}>
-                    ⏹️ Detener cronómetro
-                  </button>
-                ) : (
-                  <button type="button" className="btn" onClick={handleStartTimer} disabled={timerBusy}>
-                    ▶️ Iniciar cronómetro
-                  </button>
-                )}
-                <div className="comment-input-wrap" style={{ marginTop: 10 }}>
-                  <input
-                    type="number"
-                    min={1}
-                    value={manualMinutes}
-                    onChange={(e) => setManualMinutes(e.target.value)}
-                    placeholder="Minutos"
-                  />
-                  <input value={manualNote} onChange={(e) => setManualNote(e.target.value)} placeholder="Nota (opcional)" />
-                  <button type="button" className="btn" onClick={handleAddManualEntry} disabled={!manualMinutes || timerBusy}>
-                    Agregar
-                  </button>
-                </div>
-                {timeEntries.length > 0 && (
-                  <ul className="attachment-list" style={{ marginTop: 10 }}>
-                    {timeEntries.map((e) => (
-                      <li key={e.id} className="attachment-item">
-                        <span className="attachment-name">
-                          {authorName(e.userId)} —{" "}
-                          {e.endedAt ? `${e.minutes ?? 0} min` : "en curso…"}
-                          {e.note ? ` · ${e.note}` : ""}
-                        </span>
-                        <button type="button" className="btn danger" onClick={() => handleDeleteTimeEntry(e.id)}>
-                          Eliminar
-                        </button>
-                      </li>
-                    ))}
-                  </ul>
-                )}
-              </div>
+              {taskId && <TaskTimeSection taskId={taskId} />}
 
               <div className="field task-section">
                 <label>Checklist</label>
@@ -1834,45 +1652,7 @@ export default function TaskModal({
                 </div>
               )}
 
-              {taskId && (
-                <div className="field task-section">
-                  <label>GitHub</label>
-                  {githubLinks.length > 0 && (
-                    <ul style={{ listStyle: "none", padding: 0, margin: "0 0 10px", display: "flex", flexDirection: "column", gap: 6 }}>
-                      {githubLinks.map((l) => (
-                        <li key={l.id} style={{ display: "flex", alignItems: "center", gap: 8, fontSize: 13 }}>
-                          <span>
-                            {l.kind === "pull_request" ? "🔀" : "◯"} {l.repo}#{l.number} — {l.title}{" "}
-                            <span style={{ color: "var(--muted)" }}>({l.state})</span>
-                          </span>
-                          <a href={l.url} target="_blank" rel="noopener noreferrer" className="btn">
-                            Ver
-                          </a>
-                          <button type="button" className="btn" onClick={() => handleRemoveGithubLink(l.id)}>
-                            Quitar
-                          </button>
-                        </li>
-                      ))}
-                    </ul>
-                  )}
-                  <div style={{ display: "flex", gap: 8 }}>
-                    <input
-                      value={githubUrl}
-                      onChange={(e) => setGithubUrl(e.target.value)}
-                      placeholder="https://github.com/owner/repo/issues/123"
-                      disabled={linkingGithub}
-                    />
-                    <button type="button" className="btn" onClick={handleLinkGithub} disabled={linkingGithub || !githubUrl.trim()}>
-                      {linkingGithub ? "Vinculando…" : "Vincular"}
-                    </button>
-                  </div>
-                  {githubError && (
-                    <p role="alert" className="field-error">
-                      {githubError}
-                    </p>
-                  )}
-                </div>
-              )}
+              {taskId && <TaskGithubSection taskId={taskId} />}
 
               {taskId && (
                 <div className="field task-section">
