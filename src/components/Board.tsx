@@ -228,32 +228,53 @@ export default function Board() {
 
   function handleBulkAssign() {
     if (!bulkAssigneeLabel || selectedTaskIds.size === 0 || bulkBusy) return;
-    const member = members.find((m) => (m.fullName || m.email || m.userId) === bulkAssigneeLabel);
-    for (const taskId of selectedTaskIds) {
-      const task = state.tasks[taskId];
-      if (!task) continue;
-      updateTask({ ...task, assignee: bulkAssigneeLabel, assigneeUserId: member?.userId ?? null });
+    // bulkBusy se chequeaba en el guard de arriba pero nunca se ponía en
+    // true aquí (a diferencia de handleBulkMove) — el guard contra
+    // doble-click no protegía nada en la práctica (hallazgo de la
+    // revisión de calidad, 2026-09-04, Fase 2 Tarea 5).
+    setBulkBusy(true);
+    try {
+      const member = members.find((m) => (m.fullName || m.email || m.userId) === bulkAssigneeLabel);
+      for (const taskId of selectedTaskIds) {
+        const task = state.tasks[taskId];
+        if (!task) continue;
+        updateTask({ ...task, assignee: bulkAssigneeLabel, assigneeUserId: member?.userId ?? null });
+      }
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
     }
-    clearSelection();
   }
 
   function handleBulkTag() {
     if (selectedTaskIds.size === 0 || bulkBusy) return;
-    for (const taskId of selectedTaskIds) {
-      const task = state.tasks[taskId];
-      if (!task) continue;
-      updateTask({ ...task, tag: bulkTag.trim() || undefined });
+    setBulkBusy(true);
+    try {
+      for (const taskId of selectedTaskIds) {
+        const task = state.tasks[taskId];
+        if (!task) continue;
+        updateTask({ ...task, tag: bulkTag.trim() || undefined });
+      }
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
     }
-    clearSelection();
   }
 
   function handleBulkDelete() {
-    if (selectedTaskIds.size === 0) return;
+    // Antes no chequeaba bulkBusy en absoluto (a diferencia de los otros
+    // 3 handlers bulk) — un doble-click disparaba dos confirm() apilados.
+    if (selectedTaskIds.size === 0 || bulkBusy) return;
     if (!window.confirm(`¿Eliminar ${selectedTaskIds.size} tarea(s)? Esta acción no se puede deshacer.`)) return;
-    for (const taskId of selectedTaskIds) {
-      deleteTask(taskId);
+    setBulkBusy(true);
+    try {
+      for (const taskId of selectedTaskIds) {
+        deleteTask(taskId);
+      }
+      clearSelection();
+    } finally {
+      setBulkBusy(false);
     }
-    clearSelection();
   }
 
   const sensors = useSensors(
@@ -488,7 +509,7 @@ export default function Board() {
             <button type="button" className="btn" onClick={handleBulkTag} disabled={bulkBusy}>
               Etiquetar
             </button>
-            <button type="button" className="btn danger" onClick={handleBulkDelete}>
+            <button type="button" className="btn danger" onClick={handleBulkDelete} disabled={bulkBusy}>
               Eliminar
             </button>
             <button type="button" className="btn" onClick={clearSelection}>

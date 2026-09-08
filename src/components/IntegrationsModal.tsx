@@ -659,13 +659,20 @@ export default function IntegrationsModal({ onClose, embedded = false }: Integra
             </>
           ) : (
             <div className="field">
-              {INTEGRATION_PROVIDERS.map((provider) =>
-                provider === "crm_generic" ? (
-                  <CrmGenericCard key={provider} integration={byProvider.get(provider)} />
+              {INTEGRATION_PROVIDERS.map((provider) => {
+                // key = id de la integración (no solo el provider): fuerza
+                // un remount cuando cambia/aparece/desaparece la fila real,
+                // evitando estado local obsoleto tras un cambio externo
+                // (hallazgo de la revisión de calidad, 2026-09-04, Fase 2
+                // Tarea 4).
+                const integration = byProvider.get(provider);
+                const key = integration?.id ?? provider;
+                return provider === "crm_generic" ? (
+                  <CrmGenericCard key={key} integration={integration} />
                 ) : (
-                  <ProviderCard key={provider} provider={provider} integration={byProvider.get(provider)} />
-                )
-              )}
+                  <ProviderCard key={key} provider={provider} integration={integration} />
+                );
+              })}
             </div>
           )}
         </div>
