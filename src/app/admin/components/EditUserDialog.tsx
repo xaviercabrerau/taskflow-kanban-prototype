@@ -33,7 +33,43 @@ export default function EditUserDialog({
   );
   const [error, setError] = useState("");
 
+  // Restablecer contraseña reutiliza /api/admin/reset-password (ya
+  // existente, usado hoy solo desde InviteModal) — genera una contraseña
+  // temporal en el cliente, la aplica vía el endpoint, y la muestra para
+  // compartirla. Acción independiente del form de nombre/rol/estado de
+  // abajo, por eso no pasa por onUpdateUser.
+  const [resetting, setResetting] = useState(false);
+  const [resetPassword, setResetPassword] = useState<string | null>(null);
+  const [resetError, setResetError] = useState<string | null>(null);
+  const [copied, setCopied] = useState(false);
+
   if (!isOpen || !user) return null;
+
+  async function handleResetPassword() {
+    if (!user) return;
+    setResetting(true);
+    setResetError(null);
+    setResetPassword(null);
+    try {
+      const tempPassword =
+        Math.random().toString(36).slice(2, 12) + Math.random().toString(36).slice(2, 5).toUpperCase();
+      const res = await fetch("/api/admin/reset-password", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ userId: user.id, password: tempPassword, requirePasswordChange: true }),
+      });
+      const data = await res.json();
+      if (!res.ok) {
+        setResetError(data.error ?? "No se pudo restablecer la contraseña.");
+        return;
+      }
+      setResetPassword(tempPassword);
+    } catch (err) {
+      setResetError(err instanceof Error ? err.message : "No se pudo restablecer la contraseña.");
+    } finally {
+      setResetting(false);
+    }
+  }
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -142,6 +178,52 @@ export default function EditUserDialog({
                   Inactive
                 </label>
               </div>
+            </div>
+
+            <div className="form-group" style={{ borderTop: "1px solid var(--border)", paddingTop: 14, marginTop: 4 }}>
+              <label>Password</label>
+              <button
+                type="button"
+                className="btn"
+                onClick={handleResetPassword}
+                disabled={isLoading || resetting}
+              >
+                {resetting ? "Restableciendo…" : "Restablecer contraseña"}
+              </button>
+              {resetError && <p className="error-text">⚠️ {resetError}</p>}
+              {resetPassword && (
+                <div style={{ marginTop: 8, display: "flex", flexDirection: "column", gap: 6 }}>
+                  <p style={{ fontSize: 12.5, color: "var(--muted)", margin: 0 }}>
+                    Comparte esta contraseña temporal con {user.name || user.email}. Se le pedirá cambiarla en su
+                    próximo inicio de sesión.
+                  </p>
+                  <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+                    <code
+                      style={{
+                        flex: 1,
+                        background: "var(--surface-2)",
+                        padding: "6px 10px",
+                        borderRadius: 6,
+                        fontSize: 13,
+                        userSelect: "all",
+                      }}
+                    >
+                      {resetPassword}
+                    </code>
+                    <button
+                      type="button"
+                      className="btn"
+                      onClick={() => {
+                        navigator.clipboard.writeText(resetPassword);
+                        setCopied(true);
+                        setTimeout(() => setCopied(false), 2000);
+                      }}
+                    >
+                      {copied ? "Copiado ✓" : "Copiar"}
+                    </button>
+                  </div>
+                </div>
+              )}
             </div>
           </div>
 
