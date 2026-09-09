@@ -57,7 +57,7 @@ export async function POST(request: Request) {
   let rawRows: RawImportRow[];
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: "buffer" });
+    const workbook = XLSX.read(buffer, { type: "buffer", codepage: 65001 });
     const firstSheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[firstSheetName];
     rawRows = XLSX.utils.sheet_to_json<RawImportRow>(sheet, { defval: "" });

@@ -145,6 +145,79 @@ describe('POST /api/admin/import-tasks', () => {
     });
   });
 
+  it('reads accented headers correctly from a UTF-8 CSV without a BOM', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    const insertedRows: unknown[] = [];
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'organization_members') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { organization_id: 'org-1', org_role: 'owner' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'boards') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { id: 'board-1', tenant_id: 'org-1' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'board_columns') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockResolvedValue({
+            data: [{ id: 'col-todo', label: 'To Do' }],
+            error: null,
+          }),
+        };
+      }
+      if (table === 'tasks') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+          insert: jest.fn().mockImplementation((rows: unknown[]) => {
+            insertedRows.push(...rows);
+            return Promise.resolve({ error: null });
+          }),
+        };
+      }
+      return {};
+    });
+
+    // Build the raw CSV text ourselves and encode it as plain UTF-8 with
+    // NO byte-order-mark — XLSX.utils.json_to_sheet/XLSX.write always
+    // prepend a BOM, which would not reproduce the bug (SheetJS mojibake
+    // of "Título" -> "TÃ­tulo" when it has to guess the encoding).
+    const csvText = 'Título,Estado\nTarea válida sin BOM,To Do\n';
+    const buffer = Buffer.from(csvText, 'utf-8');
+    // Sanity check: no UTF-8 BOM (EF BB BF) at the start of the buffer.
+    expect(buffer[0]).not.toBe(0xef);
+    const file = new File([buffer], 'tareas-no-bom.csv', { type: 'text/csv' });
+
+    const response = await importTasks(makeFormDataRequest(file, 'board-1'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.errors).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: 'Título es obligatorio' })])
+    );
+    expect(json.created).toBe(1);
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0]).toMatchObject({
+      title: 'Tarea válida sin BOM',
+      column_id: 'col-todo',
+    });
+  });
+
   it('rejects a file with more than 500 data rows', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
     mockSupabase.from.mockImplementation((table: string) => {
