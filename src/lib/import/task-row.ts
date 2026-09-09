@@ -1,3 +1,16 @@
+export const IMPORT_HEADERS = [
+  "Título",
+  "Estado",
+  "Prioridad",
+  "Asignado",
+  "Etiqueta",
+  "Fecha inicio",
+  "Fecha vencimiento",
+] as const;
+
+const [TITULO, ESTADO, PRIORIDAD, ASIGNADO, ETIQUETA, FECHA_INICIO, FECHA_VENCIMIENTO] =
+  IMPORT_HEADERS;
+
 export type ParsedPriority = "low" | "medium" | "high" | "urgent";
 
 export interface ParsedTaskRow {
@@ -74,11 +87,11 @@ export function validateTaskRow(
 ): { row?: ParsedTaskRow; error?: RowError } {
   const errors: string[] = [];
 
-  const title = readText(raw, "Título");
+  const title = readText(raw, TITULO);
   if (!title) errors.push("Título es obligatorio");
 
-  const estadoRaw = raw["Estado"];
-  const estadoKey = readText(raw, "Estado").toLowerCase();
+  const estadoRaw = raw[ESTADO];
+  const estadoKey = readText(raw, ESTADO).toLowerCase();
   const columnId = columnLabelToId.get(estadoKey);
   if (!estadoKey) {
     errors.push("Estado es obligatorio");
@@ -87,7 +100,7 @@ export function validateTaskRow(
   }
 
   let priority: ParsedPriority = "medium";
-  const priorityText = readText(raw, "Prioridad");
+  const priorityText = readText(raw, PRIORIDAD);
   if (priorityText) {
     const mapped = PRIORITY_MAP[priorityText.toLowerCase()];
     if (!mapped) {
@@ -97,10 +110,10 @@ export function validateTaskRow(
     }
   }
 
-  const assignee = readText(raw, "Asignado") || undefined;
-  const tag = readText(raw, "Etiqueta") || undefined;
-  const startDate = normalizeDateField(raw, "Fecha inicio", errors);
-  const dueDate = normalizeDateField(raw, "Fecha vencimiento", errors);
+  const assignee = readText(raw, ASIGNADO) || undefined;
+  const tag = readText(raw, ETIQUETA) || undefined;
+  const startDate = normalizeDateField(raw, FECHA_INICIO, errors);
+  const dueDate = normalizeDateField(raw, FECHA_VENCIMIENTO, errors);
 
   if (errors.length > 0) {
     return { error: { row: rowNumber, reason: errors.join("; ") } };

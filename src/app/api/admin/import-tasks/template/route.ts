@@ -1,5 +1,6 @@
 import * as XLSX from "xlsx";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
+import { IMPORT_HEADERS } from "@/lib/import/task-row";
 
 // Plantilla estática — no depende de datos de ninguna organización, solo
 // requiere una sesión válida para no quedar completamente pública.
@@ -10,7 +11,7 @@ export async function GET() {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const headers = ["Título", "Estado", "Prioridad", "Asignado", "Etiqueta", "Fecha inicio", "Fecha vencimiento"];
+  const headers = [...IMPORT_HEADERS];
   const exampleRow = [
     "Enviar propuesta al cliente",
     "To Do",

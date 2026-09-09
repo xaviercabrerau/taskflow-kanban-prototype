@@ -31,7 +31,7 @@ const NAV_GROUPS: NavGroup[] = [
     items: [
       { href: "/admin/planificacion", label: "Épicas y Sprints", icon: "🎯" },
       { href: "/admin/tareas-recurrentes", label: "Tareas recurrentes", icon: "🔁" },
-      { href: "/admin/importar-tareas", label: "Importar tareas", icon: "📥" },
+      { href: "/admin/importar-tareas", label: "Importar tareas", icon: "📥", ownerOnly: true },
       { href: "/admin/automatizaciones", label: "Automatizaciones", icon: "⚡" },
       { href: "/admin/campos-personalizados", label: "Campos personalizados", icon: "🏷️" },
       { href: "/admin/plantillas", label: "Plantillas", icon: "🧩" },
