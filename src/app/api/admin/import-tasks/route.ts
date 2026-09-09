@@ -57,7 +57,14 @@ export async function POST(request: Request) {
   let rawRows: RawImportRow[];
   try {
     const buffer = Buffer.from(await file.arrayBuffer());
-    const workbook = XLSX.read(buffer, { type: "buffer", codepage: 65001 });
+    // Un CSV UTF-8 con BOM (p.ej. la exportación "CSV UTF-8" de Excel) ya
+    // trae su codificación marcada y SheetJS la detecta sola — forzar
+    // codepage:65001 en ese caso rompe el parseo (corta "Título" a "tulo").
+    // Sin BOM, SheetJS asume una codepage por defecto que no es UTF-8 y
+    // desfigura los acentos ("Título" -> "TÃ­tulo"), así que ahí sí hace
+    // falta forzar 65001. Se detecta el BOM manualmente para elegir.
+    const hasUtf8Bom = buffer.length >= 3 && buffer[0] === 0xef && buffer[1] === 0xbb && buffer[2] === 0xbf;
+    const workbook = XLSX.read(buffer, hasUtf8Bom ? { type: "buffer" } : { type: "buffer", codepage: 65001 });
     const firstSheetName = workbook.SheetNames[0];
     const sheet = workbook.Sheets[firstSheetName];
     rawRows = XLSX.utils.sheet_to_json<RawImportRow>(sheet, { defval: "" });

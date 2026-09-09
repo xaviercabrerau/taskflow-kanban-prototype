@@ -218,6 +218,86 @@ describe('POST /api/admin/import-tasks', () => {
     });
   });
 
+  it('reads accented headers correctly from a UTF-8 CSV WITH a BOM', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    const insertedRows: unknown[] = [];
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'organization_members') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { organization_id: 'org-1', org_role: 'owner' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'boards') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { id: 'board-1', tenant_id: 'org-1' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'board_columns') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockResolvedValue({
+            data: [{ id: 'col-todo', label: 'To Do' }],
+            error: null,
+          }),
+        };
+      }
+      if (table === 'tasks') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue({ data: [], error: null }),
+          insert: jest.fn().mockImplementation((rows: unknown[]) => {
+            insertedRows.push(...rows);
+            return Promise.resolve({ error: null });
+          }),
+        };
+      }
+      return {};
+    });
+
+    // Regression test for a real bug found in production: forcing
+    // codepage:65001 unconditionally (the original fix for the no-BOM
+    // case above) broke files that DO have a UTF-8 BOM — e.g. Excel's own
+    // "CSV UTF-8" export, which always prepends one. With codepage forced,
+    // SheetJS double-processed the BOM and truncated "Título" to "tulo".
+    // Build the CSV with an explicit BOM prefix (not via
+    // XLSX.utils.json_to_sheet/XLSX.write, to keep this test's construction
+    // symmetric with the no-BOM test above and make the BOM presence explicit).
+    const bom = Buffer.from([0xef, 0xbb, 0xbf]);
+    const csvText = 'Título,Estado\nTarea válida con BOM,To Do\n';
+    const buffer = Buffer.concat([bom, Buffer.from(csvText, 'utf-8')]);
+    // Sanity check: buffer really does start with a UTF-8 BOM.
+    expect(buffer[0]).toBe(0xef);
+    expect(buffer[1]).toBe(0xbb);
+    expect(buffer[2]).toBe(0xbf);
+    const file = new File([buffer], 'tareas-con-bom.csv', { type: 'text/csv' });
+
+    const response = await importTasks(makeFormDataRequest(file, 'board-1'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.errors).not.toEqual(
+      expect.arrayContaining([expect.objectContaining({ reason: 'Título es obligatorio' })])
+    );
+    expect(json.created).toBe(1);
+    expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0]).toMatchObject({
+      title: 'Tarea válida con BOM',
+      column_id: 'col-todo',
+    });
+  });
+
   it('rejects a file with more than 500 data rows', async () => {
     mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
     mockSupabase.from.mockImplementation((table: string) => {
