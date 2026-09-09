@@ -2,6 +2,7 @@
 
 import { useEffect, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
+import AdminPanelShell from "./AdminPanelShell";
 
 interface BoardOption {
   id: string;
@@ -13,7 +14,12 @@ interface ImportResult {
   errors: { row: number; reason: string }[];
 }
 
-export default function ImportTasksPanel() {
+interface ImportTasksPanelProps {
+  onClose: () => void;
+  embedded?: boolean;
+}
+
+export default function ImportTasksPanel({ onClose, embedded = false }: ImportTasksPanelProps) {
   const { supabase, tenantId } = useBoard();
   const [boards, setBoards] = useState<BoardOption[]>([]);
   const [boardId, setBoardId] = useState("");
@@ -28,7 +34,13 @@ export default function ImportTasksPanel() {
       .from("boards")
       .select("id, name")
       .eq("tenant_id", tenantId)
-      .then(({ data }) => setBoards(data ?? []));
+      .then(({ data, error: fetchError }) => {
+        if (fetchError) {
+          setError(fetchError.message);
+          return;
+        }
+        setBoards(data ?? []);
+      });
   }, [supabase, tenantId]);
 
   async function handleImport(e: React.FormEvent) {
@@ -56,10 +68,7 @@ export default function ImportTasksPanel() {
   }
 
   return (
-    <div className="admin-panel">
-      <div className="modal-head" style={{ padding: "0 0 12px" }}>
-        <h2 style={{ fontSize: 15 }}>Importar tareas</h2>
-      </div>
+    <AdminPanelShell embedded={embedded} onClose={onClose} title="Importar tareas">
       <p style={{ color: "var(--muted)", fontSize: 13.5, marginTop: 0 }}>
         Carga tareas en lote desde un archivo .xlsx, .xls o .csv. Descarga la
         plantilla para asegurarte de usar las cabeceras correctas.
@@ -99,7 +108,7 @@ export default function ImportTasksPanel() {
         </p>
       )}
       {result && (
-        <div style={{ marginTop: 16 }}>
+        <div style={{ marginTop: 16 }} aria-live="polite">
           <p style={{ fontSize: 13.5 }}>
             {result.created > 0
               ? `${result.created} tarea(s) creada(s) correctamente.`
@@ -118,6 +127,6 @@ export default function ImportTasksPanel() {
           )}
         </div>
       )}
-    </div>
+    </AdminPanelShell>
   );
 }
