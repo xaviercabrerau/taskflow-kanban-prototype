@@ -13,21 +13,6 @@ export async function POST(request: Request) {
     return Response.json({ error: "Unauthorized" }, { status: 401 });
   }
 
-  const { data: membership, error: membershipError } = await supabase
-    .from("organization_members")
-    .select("organization_id, org_role")
-    .eq("user_id", authData.user.id)
-    .maybeSingle();
-  if (membershipError) {
-    return Response.json({ error: membershipError.message }, { status: 500 });
-  }
-  if (!membership || membership.org_role !== "owner") {
-    return Response.json(
-      { error: "Solo el propietario de la organización puede importar tareas." },
-      { status: 403 }
-    );
-  }
-
   let form: FormData;
   try {
     form = await request.formData();
@@ -49,8 +34,24 @@ export async function POST(request: Request) {
   if (boardError) {
     return Response.json({ error: boardError.message }, { status: 500 });
   }
-  if (!board || board.tenant_id !== membership.organization_id) {
+  if (!board) {
     return Response.json({ error: "Ese tablero no pertenece a tu organización." }, { status: 403 });
+  }
+
+  const { data: membership, error: membershipError } = await supabase
+    .from("organization_members")
+    .select("organization_id, org_role")
+    .eq("user_id", authData.user.id)
+    .eq("organization_id", board.tenant_id)
+    .maybeSingle();
+  if (membershipError) {
+    return Response.json({ error: membershipError.message }, { status: 500 });
+  }
+  if (!membership || membership.org_role !== "owner") {
+    return Response.json(
+      { error: "Solo el propietario de la organización puede importar tareas." },
+      { status: 403 }
+    );
   }
 
   let rawRows: RawImportRow[];

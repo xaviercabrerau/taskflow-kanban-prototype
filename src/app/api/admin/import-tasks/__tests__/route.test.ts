@@ -61,6 +61,16 @@ describe('POST /api/admin/import-tasks', () => {
           }),
         };
       }
+      if (table === 'boards') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { id: 'board-1', tenant_id: 'org-1' },
+            error: null,
+          }),
+        };
+      }
       return {};
     });
     const file = makeXlsxFile([{ 'Título': 'x', 'Estado': 'To Do' }]);
@@ -127,6 +137,12 @@ describe('POST /api/admin/import-tasks', () => {
     expect(json.created).toBe(1);
     expect(json.errors).toEqual([{ row: 2, reason: 'Título es obligatorio' }]);
     expect(insertedRows).toHaveLength(1);
+    expect(insertedRows[0]).toMatchObject({
+      tenant_id: 'org-1',
+      board_id: 'board-1',
+      column_id: 'col-todo',
+      position: 1,
+    });
   });
 
   it('rejects a file with more than 500 data rows', async () => {
