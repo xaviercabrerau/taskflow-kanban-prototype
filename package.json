@@ -25,7 +25,8 @@
     "react": "19.2.8",
     "react-dom": "19.2.8",
     "react-email": "^6.9.2",
-    "resend": "^4.0.1"
+    "resend": "^4.0.1",
+    "xlsx": "^0.18.5"
   },
   "devDependencies": {
     "@jest/globals": "^29.7.0",
