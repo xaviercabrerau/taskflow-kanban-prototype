@@ -1,7 +1,57 @@
 # Diseño: Integración bidireccional con CRM (Tarea ↔ Ticket/Caso)
 
 Fecha: 2026-09-03
-Estado: Diseño validado — pendiente de implementación
+Estado (al escribirse): Diseño validado — pendiente de implementación
+
+---
+
+> ## Nota de estado — 2026-09-09
+>
+> **Implementado**, con desviaciones respecto a lo que dice el diseño más abajo.
+> El texto original se conserva tal cual como registro histórico; donde el diseño
+> y esta nota se contradigan, manda esta nota.
+>
+> ### Hecho
+>
+> | Punto del diseño | Dónde quedó |
+> |---|---|
+> | `tasks.external_ticket_id` + índice único por tenant (parcial, `where external_ticket_id is not null`) | `20260903230500_crm_integration_base.sql` |
+> | `tasks.synced_from_crm_at` | misma migración |
+> | `ingest_webhook_task` extendida: si el payload trae `p_external_ticket_id` y ya existe una tarea con ese id en el tenant → actualiza en vez de crear (`on conflict (tenant_id, external_ticket_id)`) | `20260903230500_crm_integration_base.sql`, corregida en `20260904020000_fix_ingest_webhook_task_token_hash.sql` |
+> | Anti-loop por ventana corta | `20260904000000_crm_generic_adapter.sql`: la automatización saliente omite el disparo si `synced_from_crm_at > now() - interval '5 seconds'` — exactamente la ventana de ~5s del diseño |
+> | Opción 3, adaptador propio `crm_generic` | `20260904000000_crm_generic_adapter.sql`: provider `crm_generic` añadido a `integrations_provider_check`, accesor `get_crm_credential()` (secreto en Vault, `EXECUTE` revocado de `anon`/`authenticated`), acción de automatización `crm_sync` |
+> | Acción `crm_sync` en el motor de automatizaciones | `ACTION_TYPES` en `src/lib/supabase/automations-repo.ts` + UI en `src/components/AutomationsModal.tsx` |
+> | UI de configuración del CRM (`base_url` / endpoints / `field_mapping` / secreto) | `src/components/IntegrationsModal.tsx`, pestaña "CRM (genérico)" |
+> | Resolución asíncrona del id de ticket creado | cron `taskflow_resolve_crm_sync_responses`, cada minuto (ver `src/lib/cron-jobs.ts`) |
+>
+> ### Desviaciones respecto al diseño
+>
+> - **El adaptador vive en Postgres, no en TypeScript.** No existe
+>   `src/lib/crm/adapter.ts`: la llamada saliente la hace
+>   `execute_automation_rules()` con `pg_net`. Consecuencia:
+>   `pg_net` en este proyecto solo expone `http_get`/`http_post`/`http_delete`
+>   (verificado en vivo), **no `http_patch`/`http_put`** — tanto la creación como la
+>   actualización de tickets se envían con `POST`. Si un CRM exige `PATCH` estricto,
+>   habrá que añadir un header de method-override configurable.
+> - **No existe `src/app/api/webhooks/crm/[token]/route.ts`.** El webhook entrante no
+>   pasa por una ruta de Next.js: se llama directamente al RPC de Supabase
+>   `POST {NEXT_PUBLIC_SUPABASE_URL}/rest/v1/rpc/ingest_webhook_task`. Los workflows
+>   de n8n/Zapier deben apuntar ahí, no a `https://task.conto.ec/api/webhooks/crm/{token}`
+>   como dice el diseño.
+>
+> ### Pendiente
+>
+> - **Punto 5 de la base común: no está hecho.** `/api/v1/tasks` sigue sin soportar
+>   filtrar ni actualizar por `external_ticket_id` — `GET` delega en `mcp_list_tasks`
+>   sin parámetros de filtro y no hay `PATCH`. Un integrador externo no puede hacer
+>   upsert por ticket a través de la API v1; hoy la única vía de upsert es
+>   `ingest_webhook_task`.
+> - **Opción 1 (n8n): no hay ningún workflow armado.** El lado TaskFlow está listo
+>   (webhook entrante + acción `webhook` saliente), pero los dos workflows descritos
+>   no existen. No requiere código nuevo, solo montarlos.
+> - **Opción 2 (Zapier/Make): descartada de momento**, como ya preveía el diseño.
+
+---
 
 ## Contexto y objetivo
 

@@ -13,6 +13,11 @@ Esta política describe cómo CONTO ("TaskFlow", "nosotros") trata los datos per
 
 Contacto para temas de privacidad: info@conto.ec.
 
+> **Nota de migración:** el dominio de producción (`task.conto.ec`) y los
+> proveedores de infraestructura listados en la sección 4.1 corresponden a
+> la cuenta actual. Si el proyecto se migra a otra cuenta, ver
+> [`MIGRACION.md`](MIGRACION.md).
+
 ## 2. Qué datos personales tratamos
 
 | Categoría de datos | Ejemplos concretos | Origen |
@@ -44,6 +49,8 @@ No usamos tus datos para entrenar modelos de IA propios ni los vendemos a tercer
 
 - **Supabase**: proveedor de base de datos, autenticación y almacenamiento. Todos los datos descritos en la sección 2 residen en la infraestructura de Supabase. Supabase puede a su vez depender de infraestructura de AWS. **[Pendiente de confirmar con Supabase/el equipo de infraestructura: región(es) de datos exactas y lista de subprocesadores vigente, a incluir aquí antes de publicar.]**
 - **Vercel**: proveedor de hosting de la aplicación web (frontend y funciones de servidor).
+- **Upstash (Redis)**: usado internamente para limitar la frecuencia de solicitudes (rate limiting) al endpoint MCP. Solo procesa un identificador derivado (hash SHA-256) de tu token de acceso personal, o tu dirección IP, nunca el contenido de tus tareas.
+- **Sentry**: usado para el rastreo de errores técnicos de la aplicación (cuando esté configurado con sus credenciales — ver `OBSERVABILITY.md`). Puede recibir metadatos técnicos del error (traza de pila, ruta solicitada) y, ocasionalmente, fragmentos de datos de la solicitud que causó el error.
 
 Estos proveedores actúan como encargados/subprocesadores de tratamiento y no usan los datos de TaskFlow para fines propios.
 

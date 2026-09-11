@@ -1,6 +1,37 @@
-# TaskFlow Notification System - Datadog Integration Setup
+# TaskFlow — Datadog Integration Setup
 
-**Complete guide for setting up Datadog monitoring for the TaskFlow Notification System.**
+> ## ⚠️ REFERENCE GUIDE — NOT IMPLEMENTED
+>
+> **Verified against the code on 2026-09-10: Datadog is not used by this project
+> in any form.** Concretely:
+>
+> - No Datadog package in `package.json` (no `dd-trace`, no `@datadog/*`,
+>   no `datadog-metrics`).
+> - No `DD_*` environment variable is read anywhere in `src/`, in
+>   `next.config.ts`, or in any script.
+> - No Datadog Agent, no custom metrics, no dashboard JSON, and no Datadog
+>   monitors exist in this repository.
+>
+> Nothing in this document is currently operational. Everything below — API keys,
+> agent installation, custom metrics, dashboards, alerts, cost estimates — is a
+> **hypothetical setup plan** for a Datadog integration that has never been built.
+> Do not treat any step as a description of the running system, and do not use it
+> to troubleshoot production.
+>
+> **What the project actually uses for observability today:**
+>
+> | Concern | Real implementation |
+> |---|---|
+> | Error tracking | Sentry (`@sentry/nextjs` ^10.70.0) — see [`SENTRY_SETUP.md`](./SENTRY_SETUP.md) |
+> | Uptime / liveness | `GET /api/health` (public, Supabase connectivity probe) |
+> | Scheduled-job health | `GET /api/health/cron` + the daily `/api/cron/alert-check` cron in `vercel.json` |
+> | Alerting | `ALERT_WEBHOOK_URL` posted to from `/api/cron/alert-check` |
+> | Logs / metrics | Vercel's own build-in runtime logs and analytics |
+>
+> If Datadog is ever adopted, this guide is a reasonable starting point, but every
+> step must be re-validated against Datadog's current product before use.
+
+**Reference guide for what a Datadog monitoring setup for TaskFlow could look like.**
 
 ---
 

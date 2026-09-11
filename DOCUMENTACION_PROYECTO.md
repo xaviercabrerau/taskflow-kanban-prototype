@@ -1,10 +1,33 @@
 # TaskFlow Kanban — Documentación del proyecto
 
 **Producción:** https://task.conto.ec
-**Stack:** Next.js 16 (App Router) · Supabase (Postgres/Auth/RLS/Storage/pg_cron/pg_net/Vault) · Vercel · Upstash Redis · Sentry · Resend
-**Última actualización:** 2026-09-03
+**Stack:** Next.js 16.3.0 (App Router) · React 19.2.8 · TypeScript 5 · Supabase (Postgres/Auth/RLS/Storage/pg_cron/pg_net/Vault) · Vercel · Upstash Redis · Sentry · Resend
+**Última actualización:** 2026-09-09
 
 > Este documento describe **qué hace la plataforma hoy**: páginas, API, integraciones, modelo de permisos, notificaciones, esquema de base de datos, multi-tenancy, automatizaciones, panel de administración y observabilidad. Para el historial de seguridad, ver [AUDITORIA_COMPLETA_2026-08-28.md](AUDITORIA_COMPLETA_2026-08-28.md) y [AUDITORIA_2026-09-03.md](AUDITORIA_2026-09-03.md) (17 hallazgos, los 17 resueltos). Para el roadmap de funcionalidades y su estado, ver [ROADMAP_FUNCIONALIDADES.md](ROADMAP_FUNCIONALIDADES.md).
+
+## 0. Coordenadas del despliegue actual
+
+| Dato | Valor actual |
+|---|---|
+| Repositorio | `https://github.com/xaviercabrerau/taskflow-kanban-prototype` (rama `main`, se despliega directo desde `main`) |
+| Dominio de producción | `https://task.conto.ec` |
+| Proyecto Vercel | `taskflow-kanban-prototype` — projectId `prj_pl3xpYa4CT6TUU5WbaheSmcZSozF`, orgId `team_LUyGoTDapYDMjHCRVzQaFiaX`. Despliegue: `vercel deploy --prod` |
+| Proyecto Supabase | project ref `txdyijyswpsalqnwfopc` — 114 migraciones versionadas en `supabase/migrations/` |
+| Paquete npm | `taskflow-kanban-prototype` v0.1.0 (privado) |
+
+> **Nota de migración:** estos valores corresponden a la cuenta actual (GitHub/Vercel/Supabase del propietario). Si el proyecto se migra a otra cuenta, ver [`MIGRACION.md`](MIGRACION.md) para el procedimiento completo; los valores de esta tabla, el dominio y las variables de entorno de la sección 12 son los puntos que hay que cambiar.
+
+**Verificación local** (no hay script npm dedicado para tipos):
+
+```
+npm run dev            # next dev
+npm run build          # next build
+npm run lint           # eslint
+npm test               # jest — hoy 15 suites, 215 tests, todos en verde
+npm run test:coverage  # jest --coverage
+npx tsc --noEmit       # verificación de tipos
+```
 
 ---
 
@@ -41,6 +64,8 @@
 | `GET /api/admin/users`, `GET /api/admin/users/[id]` | Lista/lee miembros de la org |
 | `POST /api/admin/create-user`, `POST /api/admin/link-existing-user`, `POST /api/admin/reset-password` | Gestión de cuentas — requieren `org_role = owner` + service role |
 | `GET/PUT /api/admin/notification-preferences` | Preferencias de notificación por evento/canal |
+| `GET /api/admin/import-tasks/template` | Descarga la plantilla `.xlsx` de importación masiva (cabeceras de `IMPORT_HEADERS`) |
+| `POST /api/admin/import-tasks` | Importación masiva de tareas desde `.xlsx`/`.xls`/`.csv` — máx. 500 filas, solo `org_role = owner` |
 
 ### Públicas / sin sesión
 
@@ -83,6 +108,7 @@
 - **Fechas** — inicio/vencimiento, alimentan Gantt, Calendario, recordatorios "por vencer" y automatizaciones.
 - **Tareas recurrentes** (`recurring_task_templates`) — plantillas diaria/semanal/mensual gestionadas desde `/admin/tareas-recurrentes`; para semanal/mensual se puede anclar a un día de la semana o del mes específico (`day_of_week`/`day_of_month`), respetado tanto en la primera ejecución como en las siguientes.
 - **Registro de actividad** — feed de solo-lectura por tarea (creación, cambios de estado, asignación, campos editados).
+- **Importación masiva de tareas** (entregada 2026-09-08/09, en producción) — página `/admin/importar-tareas`, solo para el owner de la organización. Se descarga una plantilla `.xlsx` desde `GET /api/admin/import-tasks/template` y se sube `.xlsx`/`.xls`/`.csv` a `POST /api/admin/import-tasks` (máx. 500 filas). Cabeceras (constante compartida `IMPORT_HEADERS` en `src/lib/import/task-row.ts`): Título, Estado, Prioridad, Asignado, Etiqueta, Fecha inicio, Fecha vencimiento. La importación es **parcial**: crea las filas válidas y reporta las inválidas por número de fila (1 = primera fila de datos, sin contar la cabecera). Detecta el BOM UTF-8 para decidir cómo decodificar un CSV (con BOM: detección nativa de SheetJS; sin BOM: fuerza codepage 65001), ambos casos cubiertos por un test de regresión.
 
 ## 4. Integraciones de terceros
 
@@ -91,6 +117,7 @@
 | **Google Workspace** | Calendar (sync de vencimientos), Drive (adjuntar por link o Picker), Gmail (reenvío de tareas), Meet (agendar reuniones) | ✅ Funcionando |
 | **Gmail inbound** | Responder por email para marcar tareas como hechas/comentar | ⛔ Deshabilitado (endpoints devuelven 501) |
 | **Slack / Teams** | Notificaciones **salientes** (relay automático de eventos de notificación a un webhook entrante configurado) | ✅ Funcionando (saliente); **no** hay slash commands ni recepción de mensajes — eso requeriría una Slack App + signing secret que no se ha configurado |
+| **CRM genérico** (`crm_generic`) | Adaptador propio configurable (`base_url`, `auth_header`, endpoints de creación/actualización, `response_id_field`, `field_mapping`); se usa como acción de automatización `crm_sync`. El secreto va en Vault (accesor server-only `get_crm_credential`) | ✅ Código funcional, **inactivo** hasta que la org configure el proveedor. Limitación conocida: la extensión `pg_net` de este proyecto solo expone `http_get`/`http_post`/`http_delete`, así que crear y actualizar tickets se envían con POST |
 | **Zoom / n8n** | Guardan configuración | ⛔ Sin código que la use |
 | **OpenAI / Anthropic** | Crear tareas por lenguaje natural + resumen de comentarios | ✅ Código funcional, **inactivo** hasta que la org agregue una API key en Integraciones |
 | **GitHub** | Vincular issues/PRs a tareas (Personal Access Token) | ✅ Código funcional, **inactivo** hasta que la org agregue un token en Integraciones |
@@ -104,7 +131,8 @@
 
 ## 5. Permisos y roles (RBAC)
 
-- **Rol de organización**: `owner | admin | member` (`organization_members.org_role`) — separado de los permisos finos.
+- **Rol de organización**: `owner | admin | member | guest` (`organization_members.org_role`, restringido por CHECK en la migración `20260807211340_m1_identity_rbac_structure.sql`) — **separado** del sistema de permisos finos.
+- ⚠️ **`org_role` y RBAC son sistemas distintos.** Tener `org_role = member` (o `admin`) **no** otorga por sí solo permisos granulares como `task.create`. Los permisos reales vienen de `role_assignments` (una fila por tablero, con `role_id` → `roles`), y las políticas RLS de mutación de contenido revisan `role_assignments`, no `org_role`. El rol de sistema "Contribuyente" es el que otorga `task.create`/`task.update`.
 - **Roles personalizados**: `roles` (del sistema o por organización) + `permissions` (catálogo global) + `role_permissions` + `role_assignments` (hoy siempre con `scope_type = "board"`).
 - **`has_permission(board_id, perm_key)`**: función usada tanto en políticas RLS como en el código de notificaciones (los owners de la org reciben todo, vía bypass).
 - **MFA/AAL2 en dos capas**: `MfaAalGate` exige el segundo factor si el usuario ya lo tiene inscrito; `MfaGate` fuerza la inscripción si la organización requiere MFA y el usuario no tiene ningún factor. `session_meets_mfa(tenant_id)` se exige en RLS en **toda** tabla con datos de tarea/tablero, incluidas las agregadas en septiembre (`public_share_links`, `recurring_task_templates`, `task_github_links`) — ver auditoría del 2026-09-03.
@@ -122,7 +150,15 @@
 
 ## 7. Esquema de base de datos (`public`, proyecto `txdyijyswpsalqnwfopc`)
 
-Todas las tablas tienen **RLS habilitado**; las que contienen datos de tarea/tablero exigen además `session_meets_mfa(tenant_id)`.
+> **Nota de migración:** `txdyijyswpsalqnwfopc` es el project ref de Supabase de la cuenta actual — ver [`MIGRACION.md`](MIGRACION.md).
+
+Todas las tablas tienen **RLS habilitado**; las que contienen datos de tarea/tablero exigen además `session_meets_mfa(tenant_id)`. El esquema se cambia **solo** mediante archivos de migración versionados en `supabase/migrations/` (114 hoy), nunca con SQL suelto.
+
+Detalles de RLS que no son obvios y conviene tener presentes:
+
+- **`profiles`**: la política `profiles_update_own` limita el UPDATE a `id = auth.uid()`. Un owner que edite el nombre de **otro** usuario debe usar un cliente service-role; con el cliente normal la actualización afecta 0 filas y **no lanza error**.
+- **`organization_members`**: la política `org_members_update` **sí** permite a un owner actualizar el `org_role` de otros miembros con el cliente normal.
+- **`organization_members` tiene `UNIQUE(organization_id, user_id)`**: un mismo usuario puede pertenecer a varias organizaciones (una fila por cada una), así que toda consulta de membresía debe filtrar por organización, no solo por usuario.
 
 | Tabla | Propósito |
 |---|---|

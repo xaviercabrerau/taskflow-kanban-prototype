@@ -1,425 +1,220 @@
-# Security Testing Endpoints Checklist
+# Security Checklist — API Endpoints
 
-This document tracks which security-critical endpoints need to be implemented for the TaskFlow Notification System before production deployment.
+**Last verified against the code:** 2026-09-10. Every row below was produced by
+opening the corresponding `src/app/api/**/route.ts` and reading its actual
+authentication and authorization code.
 
-## Executive Summary
+This checklist covers **all 31 route files** that exist in `src/app/api`. If an
+endpoint is not listed here, it does not exist in this repository. For request
+and response shapes, see [`API_ENDPOINTS.md`](./API_ENDPOINTS.md); this document
+is only about *who is allowed to call what*.
 
-**Status:** 3 critical endpoints pending implementation  
-**Priority:** HIGH - Required for GDPR compliance and production security  
-**Target Completion:** Before first production deployment  
-
-## Endpoint Status Matrix
-
-| Endpoint | Purpose | Status | Priority | GDPR Required | Owner | Target Sprint |
-|----------|---------|--------|----------|---------------|-------|---|
-| `/api/admin/delete-user` | GDPR: Right to erasure | ⚠️ Planned | **CRITICAL** | YES | Backend | v1.0 |
-| `/api/admin/export-data` | GDPR: Data portability | ⚠️ Planned | **CRITICAL** | YES | Backend | v1.0 |
-| `/api/admin/audit-logs` | Compliance: Audit trail | ⚠️ Planned | **HIGH** | NO | Backend | v1.0 |
-| `/api/health` | Health check | ✅ Implemented | LOW | NO | DevOps | - |
-| `/api/admin/users` | User management | ✅ Implemented | MEDIUM | NO | Backend | - |
-| `/api/admin/notification-preferences` | Preference management | ✅ Implemented | MEDIUM | NO | Backend | - |
-| `/api/webhooks/gmail-reply` | Email replies | ✅ Implemented | MEDIUM | NO | Backend | - |
-
-## Pending Implementations
-
-### 1. `DELETE /api/admin/delete-user` - GDPR Right to Erasure
-
-**Purpose:** Allow authorized users to permanently delete another user's account and associated data  
-**Legal Basis:** GDPR Article 17 (Right to be forgotten)  
-**Status:** Not yet implemented
-
-#### Requirements
-
-**Request:**
-```http
-POST /api/admin/delete-user
-Authorization: Bearer {JWT}
-Content-Type: application/json
-
-{
-  "user_id": "550e8400-e29b-41d4-a716-446655440000",
-  "reason": "user_request",  // user_request | admin_cleanup | account_issue
-  "confirm": true             // Must explicitly confirm
-}
-```
-
-**Response (200 OK):**
-```json
-{
-  "success": true,
-  "user_id": "550e8400-e29b-41d4-a716-446655440000",
-  "status": "deletion_queued",
-  "deleted_at": "2026-08-18T14:30:00Z",
-  "message": "User deletion queued. Process may take up to 30 days."
-}
-```
-
-**Error Responses:**
-- `400` - Invalid request (missing user_id, confirm=false)
-- `401` - Not authenticated
-- `403` - Not organization owner
-- `404` - User not found
-- `409` - User has active billing; complete payment first
-- `500` - Database error
-
-#### Implementation Checklist
-
-- [ ] Add endpoint route at `/api/admin/delete-user`
-- [ ] Require authentication (JWT token)
-- [ ] Require authorization (organization owner role)
-- [ ] Validate request body (user_id required, confirm must be true)
-- [ ] Log deletion request to audit trail
-- [ ] Delete user authentication record (Supabase Auth)
-- [ ] Delete user profile record
-- [ ] Delete user organization memberships
-- [ ] Delete associated notification preferences
-- [ ] Delete associated notification history (anonymize if immutable)
-- [ ] Delete associated email logs
-- [ ] Delete associated API keys/tokens
-- [ ] Delete any webhooks associated with user
-- [ ] Queue background job for "soft delete" (30-day retention for compliance)
-- [ ] Send confirmation email to organization owner
-- [ ] Return deletion timestamp for record-keeping
-
-#### Security Considerations
-
-- ✅ Only organization owners can delete users
-- ✅ Cannot delete self (prevent accidental account loss)
-- ✅ Require explicit confirmation (prevent accidental API calls)
-- ✅ Log all deletion attempts (audit trail)
-- ✅ Implement 30-day grace period (GDPR requirement)
-- ✅ Audit retention: keep deletion records for 7 years (compliance)
-- ⚠️ TODO: Send notification to deleted user
-- ⚠️ TODO: Implement backup retention policy
-
-#### Timeline
-
-- **Implementation:** 2-3 days
-- **Testing:** 2-3 days
-- **QA/Review:** 2 days
-- **Documentation:** 1 day
+> **Migration note:** the production host (`https://task.conto.ec`), the Supabase
+> project ref (`txdyijyswpsalqnwfopc`) and the Vercel project IDs belong to the
+> current account. The secrets named here (`CRON_SECRET`, `INTERNAL_NOTIFY_SECRET`,
+> `JWT_SECRET`, `SUPABASE_SERVICE_ROLE_KEY`) must all be regenerated on a move —
+> see [`MIGRACION.md`](../MIGRACION.md). Only variable *names* appear in this
+> document; never paste a value here.
 
 ---
 
-### 2. `GET /api/admin/export-data` - GDPR Data Portability
+## Auth schemes in use
 
-**Purpose:** Export all user data in portable format (JSON/CSV)  
-**Legal Basis:** GDPR Article 20 (Data portability)  
-**Status:** Not yet implemented
+| Scheme | How it is enforced | Where |
+|---|---|---|
+| **Supabase session** | `createClient()` from `src/lib/supabase/server.ts` reads the auth cookie; `supabase.auth.getUser()` must succeed, else `401`. | `/api/admin/*`, `/api/tasks/*`, `/api/share-links/*`, `/api/integrations/google/*` |
+| **Session + `org_role = 'owner'`** | The above, plus a lookup on `organization_members` that must return `org_role === "owner"`, else `403`. | most write-side admin routes |
+| **Personal access token (PAT)** | `Authorization: Bearer tfmcp_...`. The route only checks prefix/length; the token is *actually* validated inside the `mcp_*` SECURITY DEFINER RPCs in Postgres. | `/api/v1/*`, `/api/mcp` |
+| **Shared secret (cron)** | `Authorization: Bearer <CRON_SECRET>` compared with `timingSafeEqual`; falls back to `?secret=<CRON_SECRET>` when no header is present. | `/api/cron/alert-check` |
+| **Shared secret (internal)** | `x-internal-secret: <INTERNAL_NOTIFY_SECRET>` header, `timingSafeEqual`. Called by Postgres triggers via `net.http_post`. | `/api/internal/*` |
+| **Signed OAuth state** | HMAC-signed `state` JWT (`JWT_SECRET`) via `verifyOAuthState`, *plus* a check that the finishing session is the same user. | `/api/integrations/google/callback` |
+| **Share token** | No user auth. The opaque token is resolved by `resolve_share_link` / `add_share_link_comment` (SECURITY DEFINER), which enforce scope, permission and expiry. | `/api/public/share/[token]*` |
+| **None** | Public by design. | `/api/health`, `/api/health/cron` (see finding SEC-1) |
 
-#### Requirements
+**Important:** a valid Supabase session is *not* permission to mutate content.
+`organization_members.org_role` and the RBAC system are **separate**. Content
+mutations are gated by RLS policies that call `has_permission(board_id, ...)`,
+which reads `role_assignments` — not `org_role`.
 
-**Request:**
-```http
-GET /api/admin/export-data?user_id=550e8400-e29b-41d4-a716-446655440000&format=json
-Authorization: Bearer {JWT}
+---
+
+## Endpoint matrix
+
+Legend: ✅ verified adequate · ⚠️ verified, with a caveat worth knowing · 🔓 effectively unauthenticated
+
+### Admin (`/api/admin`)
+
+| Endpoint | Method | Auth verified in code | Extra checks | Status |
+|---|---|---|---|---|
+| `/api/admin/users` | GET | Session | Any member of an org (no owner check) — returns only that org's members | ✅ |
+| `/api/admin/users` | POST | Session + `org_role = 'owner'` | Creates via service-role `auth.admin.createUser` | ✅ |
+| `/api/admin/users/[id]` | GET | Session | Membership required; target must be in the caller's org | ✅ |
+| `/api/admin/users/[id]` | PUT | Session + `org_role = 'owner'` | Name changes use a service-role client (RLS `profiles_update_own` blocks editing another user) | ✅ |
+| `/api/admin/users/[id]` | DELETE | Session + `org_role = 'owner'` | Guards against removing the last owner/admin | ✅ |
+| `/api/admin/create-user` | POST | Session + `org_role = 'owner'` | Service-role `auth.admin.createUser`, then inserts the membership row | ✅ |
+| `/api/admin/link-existing-user` | POST | Session + `org_role = 'owner'` | Service-role `listUsers` paging to find by email | ✅ |
+| `/api/admin/reset-password` | POST | Session + `org_role = 'owner'` | Also verifies the target user belongs to the caller's org before `updateUserById` | ✅ |
+| `/api/admin/notification-preferences` | GET, PATCH | Session | Reads/writes only rows scoped to `user_id` + the caller's `organization_id` | ⚠️ SEC-4 |
+| `/api/admin/import-tasks` | POST | Session + `org_role = 'owner'` | Also verifies the target board belongs to the caller's org (`403`); file capped at 500 data rows | ✅ |
+| `/api/admin/import-tasks/template` | GET | Session only | **No owner check.** Returns a static `.xlsx` with headers + one fake example row; contains no tenant data | ⚠️ SEC-3 |
+
+### Cron and health
+
+| Endpoint | Method | Auth verified in code | Status |
+|---|---|---|---|
+| `/api/cron/alert-check` | GET | `CRON_SECRET` via `Authorization: Bearer`, `timingSafeEqual`; `?secret=` query fallback only when the header is absent | ⚠️ SEC-2 |
+| `/api/health` | GET | **None** — by design. Reads one row from `permissions`, a global catalog whose RLS `qual = true`. Leaks no tenant data | ✅ |
+| `/api/health/cron` | GET | Forwards any `Authorization` header to Supabase, but `get_cron_health()` was later granted to `anon`, so the endpoint answers with no header at all | 🔓 SEC-1 |
+
+### Integrations
+
+| Endpoint | Method | Auth verified in code | Status |
+|---|---|---|---|
+| `/api/integrations/google/connect` | GET | Session + `org_role = 'owner'` | ✅ |
+| `/api/integrations/google/callback` | GET | Signed `state` (`JWT_SECRET`) **and** `auth.getUser().id === state.userId` | ✅ |
+| `/api/gmail-webhook` | POST | Returns `501` unconditionally — not implemented, processes nothing | ✅ |
+| `/api/webhooks/gmail-reply` | POST | Returns `501` unconditionally — deliberately disabled until Pub/Sub signature verification exists | ✅ |
+| `/api/mcp` | POST | Rate limit first; `initialize` / `tools/list` are open (no secrets returned), `tools/call` requires a `tfmcp_` bearer token validated inside the RPC | ✅ |
+
+### Internal (Postgres trigger → app)
+
+| Endpoint | Method | Auth verified in code | Status |
+|---|---|---|---|
+| `/api/internal/notify-event` | POST | `x-internal-secret` == `INTERNAL_NOTIFY_SECRET`, `timingSafeEqual`; `401` if the env var is unset | ✅ |
+| `/api/internal/sync-calendar-event` | POST | Same pattern | ✅ |
+
+### Public sharing
+
+| Endpoint | Method | Auth verified in code | Status |
+|---|---|---|---|
+| `/api/public/share/[token]` | GET | None (public by design). Rate-limited on a SHA-256 hash of the token; `resolve_share_link` enforces validity/expiry | ✅ |
+| `/api/public/share/[token]/comment` | POST | None (public by design). Rate-limited; `add_share_link_comment` rejects unless the link is `scope=task` + `permission=comment`. Body capped at 4000 chars, guest name at 80 | ✅ |
+| `/api/share-links` | GET, POST | Session; POST is additionally rate-limited per user | ✅ |
+| `/api/share-links/[id]` | DELETE | Session only — the org-ownership check is delegated entirely to the RLS policy `public_share_links_all` | ⚠️ SEC-5 |
+
+### Tasks
+
+All of these require a Supabase session, apply a per-user rate limit, and then
+verify the task belongs to an organization the caller is a member of.
+
+| Endpoint | Method | Auth verified in code | Status |
+|---|---|---|---|
+| `/api/tasks/[id]/drive-attachment` | POST | Session + rate limit + org boundary check | ✅ |
+| `/api/tasks/[id]/forward-email` | POST | Session + rate limit + org boundary check | ✅ |
+| `/api/tasks/[id]/github-link` | POST | Session + rate limit | ✅ |
+| `/api/tasks/[id]/schedule-meeting` | POST | Session + rate limit + org boundary check | ✅ |
+| `/api/tasks/[id]/summarize-comments` | POST | Session + rate limit | ✅ |
+| `/api/tasks/parse-natural-language` | POST | Session + rate limit + explicit org membership check (`403`) | ✅ |
+
+### Public REST API v1
+
+All three routes go through `authenticateApiRequest` in `src/lib/api-v1/auth.ts`:
+bearer token must start with `tfmcp_` and be ≥ 20 chars, then a rate-limit check
+keyed on the SHA-256 of the token, then the `mcp_*` SECURITY DEFINER RPC does the
+real token validation and tenant scoping.
+
+| Endpoint | Method | Status |
+|---|---|---|
+| `/api/v1/tasks` | GET, POST | ✅ |
+| `/api/v1/tasks/[id]/comments` | POST | ✅ |
+| `/api/v1/tasks/[id]/move` | POST | ✅ |
+
+---
+
+## Open findings
+
+These are **documentation findings**, recorded here for the maintainer to decide
+on. Nothing in the code was changed while producing this checklist.
+
+### SEC-1 — `/api/health/cron` is effectively unauthenticated
+
+The handler forwards the caller's `Authorization` header to Supabase, which reads
+as an auth boundary, but migration `20260810235939_grant_cron_health_to_anon.sql`
+granted `anon` EXECUTE on `get_cron_health()` so that the `CRON_SECRET`-gated
+`/api/cron/alert-check` could use it. As a side effect, `/api/health/cron` now
+answers to anyone with no header at all.
+
+- **Exposure:** whether four hardcoded, non-secret pg_cron job names are stale,
+  their last run timestamp and status. No tenant data.
+- **In-code status:** explicitly documented in the route as an accepted tradeoff.
+- **If you want it closed:** revoke the `anon` grant and give `/api/cron/alert-check`
+  its own path to the data, or gate this route on `CRON_SECRET` too.
+
+### SEC-2 — `CRON_SECRET` accepted as a URL query parameter
+
+`/api/cron/alert-check` falls back to `?secret=<CRON_SECRET>` when no
+`Authorization` header is present. The comparison is timing-safe and exact, but a
+secret in a query string ends up in Vercel access logs, browser history and any
+intermediary proxy log.
+
+- **Why it exists:** free-tier uptime monitors often cannot send custom headers.
+- **Mitigation if kept:** treat `CRON_SECRET` as log-exposed, rotate it on any
+  log-access incident, and prefer the header path wherever possible.
+
+### SEC-3 — `/api/admin/import-tasks/template` requires a session but not ownership
+
+Any authenticated user of any organization can download the import template,
+while the page that uses it (`/admin/importar-tareas`) and the import endpoint
+itself are owner-only. The template is static (column headers plus a fictional
+example row) and contains no tenant data, so the impact is cosmetic — but the
+authorization level is inconsistent with the rest of the import feature.
+
+### SEC-4 — membership lookups do not filter by organization
+
+Several admin routes resolve the caller's membership with
+`.from("organization_members").select(...).eq("user_id", ...).maybeSingle()` and
+no `organization_id` filter. `organization_members` has
+`UNIQUE(organization_id, user_id)`, so a user who belongs to **two** organizations
+matches two rows and `maybeSingle()` errors — the caller gets `500` or `403`
+instead of their data. This is a correctness/lockout bug rather than a privilege
+escalation (it fails closed), but it will surface the first time a user is added
+to a second organization.
+
+### SEC-5 — `/api/share-links/[id]` DELETE relies solely on RLS
+
+The route checks only that a session exists and then calls `revokeShareLink(supabase, id)`.
+Authorization is entirely the `public_share_links_all` RLS policy. That policy is
+the real boundary and it does scope to org members, so this is defence-in-depth
+rather than a hole — but the route has no second check, and it returns the raw
+error `message` in its `500` body, which can leak Postgres error text (every other
+route in the project uses a generic message for exactly this reason).
+
+---
+
+## What this document no longer claims
+
+Earlier revisions of this file tracked three endpoints — `/api/admin/delete-user`,
+`/api/admin/export-data` and `/api/admin/audit-logs` — as "planned, CRITICAL, GDPR
+required", with request/response schemas and delivery timelines. **None of them
+exist in the codebase, and none is scheduled.** They have been removed rather than
+carried forward, so this checklist reflects only what is real. If GDPR erasure and
+portability endpoints are wanted, they are new work, not pending work.
+
+Audit logging, however, **does** exist in a different form — see
+[`AUDIT_LOGGING.md`](./AUDIT_LOGGING.md) — via database-level audit tables and the
+`/admin/auditoria` page, not via an `/api/admin/audit-logs` HTTP endpoint.
+
+---
+
+## Verifying this checklist yourself
+
+```bash
+# every route file that exists
+find src/app/api -name route.ts | sort
+
+# what each one actually checks
+grep -n "getUser\|org_role\|CRON_SECRET\|INTERNAL_NOTIFY_SECRET\|checkRateLimit\|401\|403" \
+  src/app/api/<path>/route.ts
 ```
 
-**Query Parameters:**
-- `user_id` (required): UUID of user to export
-- `format` (optional): `json` (default) or `csv`
-- `include_attachments` (optional): `true` or `false` (default)
-
-**Response (200 OK - application/json):**
-```json
-{
-  "export_id": "export-550e8400-e29b-41d4-a716-446655440000",
-  "user_id": "550e8400-e29b-41d4-a716-446655440000",
-  "created_at": "2026-08-18T14:30:00Z",
-  "includes": ["profile", "notifications", "preferences", "audit_logs"],
-  "data": {
-    "profile": {
-      "id": "550e8400-e29b-41d4-a716-446655440000",
-      "email": "user@example.com",
-      "full_name": "John Doe",
-      "created_at": "2024-01-01T00:00:00Z"
-    },
-    "notifications": [
-      {
-        "id": "notif-123",
-        "type": "task_assigned",
-        "title": "Task Assigned",
-        "message": "You were assigned a task",
-        "created_at": "2026-08-18T10:00:00Z"
-      }
-    ],
-    "preferences": {
-      "email_notifications": true,
-      "notification_frequency": "daily",
-      "opt_in_marketing": false
-    },
-    "audit_logs": [
-      {
-        "action": "login",
-        "ip_address": "192.168.1.1",
-        "user_agent": "Mozilla/5.0...",
-        "timestamp": "2026-08-18T08:00:00Z"
-      }
-    ]
-  }
-}
-```
-
-**Error Responses:**
-- `400` - Invalid request (missing user_id, unsupported format)
-- `401` - Not authenticated
-- `403` - User cannot export other users' data (unless owner)
-- `404` - User not found
-- `500` - Database error
-
-#### Implementation Checklist
-
-- [ ] Add endpoint route at `/api/admin/export-data`
-- [ ] Require authentication (JWT token)
-- [ ] Enforce access control (can only export own data or owned users)
-- [ ] Query user profile data
-- [ ] Query associated notifications (paginated if large)
-- [ ] Query notification preferences
-- [ ] Query audit logs (login attempts, data access)
-- [ ] Query email delivery history (sanitized)
-- [ ] Support JSON export format
-- [ ] Support CSV export format (optional)
-- [ ] Support ZIP download with attachments (optional)
-- [ ] Implement streaming for large exports (don't load all in memory)
-- [ ] Set proper Content-Type headers (`application/json` or `text/csv`)
-- [ ] Add rate limiting (max 1 export per hour per user)
-- [ ] Log export requests (audit trail)
-- [ ] Return 200 OK with data
-
-#### Security Considerations
-
-- ✅ Users can only export their own data
-- ✅ Organization owners can export member data
-- ✅ PII is included (this is the purpose - data portability)
-- ✅ Sanitize user IDs and sensitive fields appropriately
-- ✅ Rate limit to prevent abuse
-- ✅ Log all export requests (audit trail)
-- ⚠️ TODO: Encrypt exported files if containing PII
-- ⚠️ TODO: Add expiration to exports
-
-#### Timeline
-
-- **Implementation:** 3-4 days (including streaming)
-- **Testing:** 2-3 days
-- **QA/Review:** 2 days
-- **Documentation:** 1 day
+The shell scripts under `testing/` (`2-security-testing.sh` and friends) are
+manually-run probes against a deployed URL, not part of `npm test`. Their
+"Compliance Testing" section still probes the three non-existent GDPR endpoints
+above and will keep reporting `404` — that is expected, not a regression.
 
 ---
 
-### 3. `GET /api/admin/audit-logs` - Compliance Audit Trail
-
-**Purpose:** Retrieve audit logs for compliance and security investigation  
-**Legal Basis:** GDPR Article 32 (Security measures), SOC 2 requirement  
-**Status:** Not yet implemented
-
-#### Requirements
-
-**Request:**
-```http
-GET /api/admin/audit-logs?
-  start_date=2026-08-01&
-  end_date=2026-08-31&
-  action=login&
-  limit=100&
-  offset=0
-Authorization: Bearer {JWT}
-```
-
-**Query Parameters:**
-- `start_date` (optional): ISO 8601 date (default: 30 days ago)
-- `end_date` (optional): ISO 8601 date (default: now)
-- `user_id` (optional): Filter by user
-- `action` (optional): Filter by action type (login, api_call, data_access, etc.)
-- `limit` (optional): Pagination limit (default: 100, max: 1000)
-- `offset` (optional): Pagination offset (default: 0)
-
-**Response (200 OK):**
-```json
-{
-  "total_count": 1250,
-  "limit": 100,
-  "offset": 0,
-  "logs": [
-    {
-      "id": "audit-123",
-      "timestamp": "2026-08-18T14:30:00Z",
-      "user_id": "550e8400-e29b-41d4-a716-446655440000",
-      "action": "api_call",
-      "resource": "/api/admin/users",
-      "method": "GET",
-      "ip_address": "192.168.1.1",
-      "user_agent": "curl/7.64.1",
-      "status_code": 200,
-      "request_id": "req-abc123",
-      "details": {
-        "organization_id": "org-123",
-        "affected_users": []
-      }
-    }
-  ]
-}
-```
-
-**Error Responses:**
-- `400` - Invalid date format or parameters
-- `401` - Not authenticated
-- `403` - User cannot view audit logs
-- `500` - Database error
-
-#### Auditable Events to Log
-
-| Action | Trigger | Details Captured |
-|--------|---------|-----------------|
-| `user_login` | User signs in | user_id, ip, user_agent, timestamp |
-| `user_logout` | User signs out | user_id, ip, timestamp |
-| `api_call` | API endpoint accessed | method, path, status_code, user_id, ip |
-| `data_access` | User views sensitive data | user_id, resource_id, field_names |
-| `data_modification` | User creates/updates data | user_id, resource_id, old_value, new_value |
-| `data_deletion` | User deletes data | user_id, resource_id, deleted_value |
-| `permission_change` | User role/permissions change | user_id, old_role, new_role, changed_by |
-| `authentication_failure` | Failed login attempt | email, ip, reason, timestamp |
-| `export_data` | GDPR export requested | user_id, requester_id, export_id, timestamp |
-| `configuration_change` | System settings changed | setting_name, old_value, new_value, changed_by |
-
-#### Implementation Checklist
-
-- [ ] Add audit log table/collection to database
-- [ ] Log all login attempts (success and failure)
-- [ ] Log all API calls with:
-  - [ ] Timestamp
-  - [ ] User ID
-  - [ ] HTTP method (GET, POST, PUT, DELETE)
-  - [ ] Endpoint path
-  - [ ] HTTP status code
-  - [ ] Client IP address
-  - [ ] User-Agent header
-- [ ] Log all data modifications (create, update, delete)
-- [ ] Log all permission/role changes
-- [ ] Log password resets and account actions
-- [ ] Log authentication failures with reason
-- [ ] Add endpoint route at `/api/admin/audit-logs`
-- [ ] Require authentication (JWT token)
-- [ ] Require authorization (organization owner or admin)
-- [ ] Implement date range filtering
-- [ ] Implement action type filtering
-- [ ] Implement pagination (limit + offset)
-- [ ] Optimize for large log volumes (proper indexing)
-- [ ] Implement log retention policy (7 years for compliance)
-
-#### Security Considerations
-
-- ✅ Only organization owners/admins can view audit logs
-- ✅ Cannot view audit logs for other organizations
-- ✅ IP addresses logged for traceability
-- ✅ User-Agent logged to detect automated access
-- ✅ Failed login attempts logged (detect brute force)
-- ✅ Immutable audit logs (append-only, no deletion)
-- ⚠️ TODO: Hash/encrypt sensitive data in logs
-- ⚠️ TODO: Implement tamper detection
-
-#### Timeline
-
-- **Implementation:** 3-4 days
-- **Database schema:** 1 day
-- **Logging integration:** 2-3 days
-- **Testing:** 2 days
-- **QA/Review:** 1 day
-- **Documentation:** 1 day
-
----
-
-## Testing Status
-
-### Security Testing Coverage
-
-Current test file: `testing/2-security-testing.sh`
-
-**Test Results for Pending Endpoints:**
-
-```
-SECTION 10: Compliance Testing
-═══════════════════════════════════════════════════════
-
-Test 10.1: Data deletion functionality...
-⚠ Data deletion: HTTP 404 - ENDPOINT NOT FOUND
-
-Test 10.2: Audit logging presence...
-⚠ Audit logging: Endpoint not found - NEEDS IMPLEMENTATION
-
-Test 10.3: GDPR data export functionality...
-⚠ Data export: Endpoint not found - NEEDS IMPLEMENTATION
-```
-
-**Action Items:**
-- [ ] Implement all 3 endpoints
-- [ ] Re-run security tests to verify implementation
-- [ ] Update test file with proper endpoint paths
-- [ ] Verify all GDPR tests pass before production
-
----
-
-## Production Readiness Criteria
-
-### Before v1.0 Release
-
-- [ ] All 3 pending endpoints implemented
-- [ ] Security tests: 100% pass rate
-- [ ] Audit logging functional (all events captured)
-- [ ] Data deletion tested with 30-day grace period
-- [ ] Data export tested with multiple formats
-- [ ] GDPR data protection impact assessment (DPIA) completed
-- [ ] Legal review of compliance implementation
-- [ ] Load testing includes audit log queries
-- [ ] Monitoring/alerting for compliance violations
-- [ ] Documentation for compliance team
-
-### For SOC 2 Certification
-
-- [ ] Audit logs immutable and tamper-proof
-- [ ] Audit logs retained for 7+ years
-- [ ] Access logs for sensitive operations
-- [ ] Encryption audit logs for PII
-- [ ] Incident response procedures documented
-- [ ] Annual security audit scheduled
-
----
-
-## Related Documentation
-
-- [API Endpoints Reference](./API_ENDPOINTS.md) - Full endpoint documentation
-- [Security Testing Suite](../testing/2-security-testing.sh) - Test automation
-- [GDPR Compliance](./PRIVACY_POLICY.md) - Legal requirements
-- [Load Testing Guide](./LOAD_TEST_SETUP.md) - Performance testing
-- [Deployment Checklist](./DEPLOYMENT.md) - Pre-release verification
-
----
-
-## Implementation Priority
-
-### Phase 1 (Sprint 1) - CRITICAL
-- [ ] `/api/admin/delete-user` - Required for GDPR
-- [ ] `/api/admin/export-data` - Required for GDPR
-
-### Phase 2 (Sprint 2) - HIGH
-- [ ] `/api/admin/audit-logs` - Required for compliance
-
-### Phase 3+ (Post-MVP) - MEDIUM
-- [ ] Enhanced audit trail features
-- [ ] Compliance reporting dashboards
-- [ ] Integration with SIEM tools
-
----
-
-## References
-
-- [GDPR Article 17 - Right to be Forgotten](https://gdpr-info.eu/art-17-gdpr/)
-- [GDPR Article 20 - Data Portability](https://gdpr-info.eu/art-20-gdpr/)
-- [GDPR Article 32 - Security Measures](https://gdpr-info.eu/art-32-gdpr/)
-- [SOC 2 Audit Requirements](https://www.aicpa.org/interestareas/informationmanagement/socialmediakit.html)
-- [OpenAPI Security Best Practices](https://swagger.io/resources/articles/best-practices-in-api-security/)
-
----
-
-**Last Updated:** 2026-08-18  
-**Maintained By:** Security Team  
-**Next Review:** 2026-09-15
+**Related:** [`API_ENDPOINTS.md`](./API_ENDPOINTS.md) ·
+[`ARCHITECTURE.md`](./ARCHITECTURE.md) · [`AUDIT_LOGGING.md`](./AUDIT_LOGGING.md) ·
+[`PRODUCTION_READINESS_CHECKLIST.md`](./PRODUCTION_READINESS_CHECKLIST.md) ·
+[`MIGRACION.md`](../MIGRACION.md)

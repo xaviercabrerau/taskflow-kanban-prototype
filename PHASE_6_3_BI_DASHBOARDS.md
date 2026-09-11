@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico (sin fecha explícita en el archivo, commit de referencia del 2026-08-20). Verificado contra el código actual: el sistema descrito aquí (dashboards de Grafana, `/api/analytics/dashboard-data`, `/api/analytics/export`, crons `daily-digest`/`weekly-alert`/`monthly-report`, alertas por Slack) nunca llegó a implementarse como código de la app — no existen esas rutas en `src/app/api/`, y `vercel.json` solo define un cron (`/api/cron/alert-check`). Solo quedan como andamiaje `docker-compose.grafana.yml` y `config/grafana/provisioning/`, sin datos ni endpoints reales detrás. El dashboard real y en producción hoy es la página `/dashboard` (`src/app/dashboard/page.tsx`, `src/components/DashboardView.tsx`), una vista de analítica in-app distinta y más simple, no relacionada con Grafana. Tratar este documento como planificación no ejecutada, no como estado actual.
+
 # Phase 6.3: BI & Dashboards - Implementation Guide
 
 Production-ready Business Intelligence and Analytics layer with Grafana dashboards, scheduled reports, and data export APIs.

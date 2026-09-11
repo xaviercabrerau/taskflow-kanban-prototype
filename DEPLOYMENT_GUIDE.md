@@ -1,345 +1,211 @@
-# 🚀 Notification System — Production Deployment Guide
+# TaskFlow — Production Deployment Guide
 
-**Last Updated:** 2026-08-18  
-**System:** TaskFlow Notification System  
-**Status:** Ready for Production  
+> **What this document covers:** the *routine* deployment of TaskFlow to the
+> existing production environment (Vercel project `taskflow-kanban-prototype`
+> → `https://task.conto.ec`), plus verification and rollback.
+> **Where to go for anything else:**
+> • Bringing a brand-new environment online for the first time →
+> [`DEPLOYMENT_PLAN.md`](./DEPLOYMENT_PLAN.md)
+> • Moving the project to different GitHub / Vercel / Supabase accounts →
+> [`MIGRACION.md`](./MIGRACION.md)
+> • Per-environment configuration checklist → [`CONFIG_CHECKLIST.md`](./CONFIG_CHECKLIST.md)
+> • Where each environment variable comes from →
+> [`ENV_SETUP_INSTRUCTIONS.md`](./ENV_SETUP_INSTRUCTIONS.md)
+> • Project overview, stack and local setup → [`README.md`](./README.md)
 
----
-
-## **PHASE 1: Environment Setup (30 minutes)**
-
-### Step 1.1: Prepare Environment Variables
-
-```bash
-# In your Vercel project settings OR .env.production:
-
-# Gmail Configuration
-GMAIL_SERVICE_ACCOUNT_JSON="your-base64-encoded-jwt-key-here"
-GMAIL_SENDER_EMAIL="notifications@yourdomain.com"
-
-# Supabase (Production)
-NEXT_PUBLIC_SUPABASE_URL="https://your-project.supabase.co"
-SUPABASE_SERVICE_ROLE_KEY="your-service-role-key-here"
-
-# Redis/BullMQ
-REDIS_URL="redis://user:password@your-redis-host:6379"
-
-# Google Cloud
-GOOGLE_CLOUD_PROJECT_ID="your-gcp-project-id"
-
-# API Security
-STAFF_API_KEY="your-api-key-for-webhook-verification"
-
-# Vercel
-NEXT_PUBLIC_VERCEL_URL="https://your-app.vercel.app"
-NODE_ENV="production"
-LOG_LEVEL="info"
-RATE_LIMIT_MAX="5"
-```
-
-### Step 1.2: Verify .env Files
-
-```bash
-# Check .env.example exists and is documented
-ls -la .env.example
-
-# IMPORTANT: Never commit .env.production
-grep ".env.production" .gitignore
-```
-
-### Step 1.3: Test Environment Loading
-
-```bash
-# Deploy to staging first (recommended):
-vercel env pull  # Pull production vars to .env.production
-
-# Verify vars are loaded:
-node -e "console.log(process.env.GMAIL_SENDER_EMAIL)"
-```
+**Last verified:** 2026-09-09 against the code, git, Vercel and Supabase.
 
 ---
 
-## **PHASE 2: Database Setup (20 minutes)**
+## 0. Current production environment
 
-### Step 2.1: Run Migrations
+| Item | Value |
+|---|---|
+| Public URL | `https://task.conto.ec` |
+| Vercel project | `taskflow-kanban-prototype` |
+| Vercel `projectId` | `prj_pl3xpYa4CT6TUU5WbaheSmcZSozF` |
+| Vercel `orgId` | `team_LUyGoTDapYDMjHCRVzQaFiaX` |
+| Source repository | `github.com/xaviercabrerau/taskflow-kanban-prototype` |
+| Deploy branch | `main` (worked on and deployed directly — no intermediate branch) |
+| Supabase project ref | `txdyijyswpsalqnwfopc` |
+
+> **Migration note:** these values belong to the accounts in use today. If the
+> project moves to other GitHub / Vercel / Supabase accounts, follow
+> [`MIGRACION.md`](./MIGRACION.md); do not edit them here piecemeal.
+
+There is **no CI pipeline** in this repository (no `.github/workflows/`). Every
+check below is run manually before pushing.
+
+---
+
+## 1. Pre-deployment checks (local, ~5 min)
+
+Run all four from the repository root. All four must be green.
 
 ```bash
-# If using Supabase CLI:
+npx tsc --noEmit      # type check (there is no dedicated npm script)
+npm run lint          # ESLint
+npm test              # Jest — expected: 15 suites, 215 tests passing
+npm run build         # production build (next build)
+```
+
+Then confirm configuration is complete: [`CONFIG_CHECKLIST.md`](./CONFIG_CHECKLIST.md).
+
+Check production health *before* deploying, so that a post-deploy failure can
+be attributed correctly:
+
+```bash
+curl -s https://task.conto.ec/api/health
+# Expected: {"status":"ok","checks":{"supabase":{"ok":true,"latencyMs":<n>}},"timestamp":"..."}
+```
+
+`/api/health` returns HTTP 200 with `"status":"ok"` when Supabase is reachable,
+and HTTP 503 with `"status":"error"` otherwise. It is safe to poll from an
+uptime monitor at any frequency (it reads only the global `permissions`
+catalog).
+
+---
+
+## 2. Database changes
+
+Schema changes go **only** through versioned migration files in
+`supabase/migrations/` (114 files as of 2026-09-09). Never apply raw SQL to the
+remote project.
+
+```bash
+supabase link --project-ref txdyijyswpsalqnwfopc
 supabase db push
-
-# Or manually apply migrations in Supabase Dashboard:
-# - supabase/migrations/20260816120000_create_notification_preferences.sql
-# - supabase/migrations/20260816120100_create_notifications.sql
-# - Plus email_threads, failed_jobs tables
 ```
 
-### Step 2.2: Verify Tables Created
-
-```bash
-# In Supabase Dashboard > SQL Editor:
-SELECT table_name FROM information_schema.tables 
-WHERE table_schema = 'public' 
-AND table_name IN ('notification_preferences', 'notifications', 'email_threads', 'failed_jobs');
-
-# Expected: 4 rows
-```
-
-### Step 2.3: Enable Row-Level Security (RLS)
+Apply migrations **before** deploying code that depends on them. Verify:
 
 ```sql
--- In Supabase Dashboard > SQL Editor
-
--- notification_preferences
-ALTER TABLE notification_preferences ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY notification_preferences_select_own ON notification_preferences
-  FOR SELECT USING (auth.uid()::text = user_id);
-
-CREATE POLICY notification_preferences_update_own ON notification_preferences
-  FOR UPDATE USING (auth.uid()::text = user_id);
-
--- notifications
-ALTER TABLE notifications ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY notifications_select_own ON notifications
-  FOR SELECT USING (auth.uid()::text = user_id);
-
-CREATE POLICY notifications_update_own ON notifications
-  FOR UPDATE USING (auth.uid()::text = user_id);
-
--- email_threads
-ALTER TABLE email_threads ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY email_threads_select_own ON email_threads
-  FOR SELECT USING (auth.uid()::text = user_id);
-
--- failed_jobs (read-only for ops team)
-ALTER TABLE failed_jobs ENABLE ROW LEVEL SECURITY;
-
-CREATE POLICY failed_jobs_select ON failed_jobs
-  FOR SELECT USING (auth.role() = 'authenticated');
+select tablename from pg_tables where schemaname = 'public' order by tablename;
+select tablename, policyname from pg_policies where schemaname = 'public' order by tablename;
 ```
 
-### Step 2.4: Verify RLS Policies
-
-```bash
-# Test RLS is working:
-# 1. Login as User A
-# 2. Query their notifications
-# 3. Verify User B's notifications are NOT visible
-```
+> **Migration note:** the `--project-ref` above is the current Supabase project.
+> See [`MIGRACION.md`](./MIGRACION.md) if it changes.
 
 ---
 
-## **PHASE 3: Gmail & Pub/Sub Setup (20 minutes)**
+## 3. Deploy
 
-### Step 3.1: Gmail Service Account (GCP Console)
+Vercel deploys from `main` through its native GitHub integration, so pushing is
+usually enough:
 
 ```bash
-# 1. Go to GCP Console > APIs & Services > Credentials
-# 2. Create Service Account:
-#    - Name: taskflow-notifications
-#    - Email: taskflow-notifications@PROJECT_ID.iam.gserviceaccount.com
-# 3. Create JSON Key (download as key.json)
-# 4. Enable Gmail API for the project
-# 5. Configure Domain-Wide Delegation (if using @company.com)
-
-# Encode the key:
-base64 < key.json | tr -d '\n' > key.base64
-
-# Set GMAIL_SERVICE_ACCOUNT_JSON to the base64 string
+git push origin main
 ```
 
-### Step 3.2: Gmail Pub/Sub Topic (GCP Console)
+To force a production deployment from your machine (Vercel CLI, already linked
+through `.vercel/`):
 
 ```bash
-# 1. Go to Pub/Sub > Topics > Create Topic
-#    - Name: gmail-reply-notifications
-# 2. Create Subscription:
-#    - Name: gmail-reply-sub
-#    - Delivery type: Push
-#    - Push endpoint: https://your-app.vercel.app/api/webhooks/gmail-reply
-#    - Auth header: OIDC token (if using Vercel authentication)
-
-# Test webhook:
-curl -X POST https://your-app.vercel.app/api/webhooks/gmail-reply \
-  -H "Content-Type: application/json" \
-  -d '{"message": {"data": "eyJtZXNzYWdlSWQiOiAidGVzdCJ9"}}'
-
-# Expected: 200 OK
-```
-
----
-
-## **PHASE 4: Redis & BullMQ Setup (10 minutes)**
-
-### Step 4.1: Verify Redis Connection
-
-```bash
-# Option A: Vercel KV (recommended for Vercel deployments)
-vercel env list  # Should show REDIS_URL
-
-# Option B: External Redis
-redis-cli -u "$REDIS_URL" ping
-# Expected: PONG
-```
-
-### Step 4.2: Test BullMQ Queue
-
-```bash
-# In your app, test job creation:
-npm run dev  # Start dev server
-
-# In another terminal:
-curl -X POST http://localhost:3000/api/admin/notifications/test \
-  -H "Authorization: Bearer YOUR_JWT_TOKEN"
-
-# Expected: 202 Accepted
-```
-
----
-
-## **PHASE 5: Testing & Build (15 minutes)**
-
-### Step 5.1: Run All Tests
-
-```bash
-npm test
-
-# Expected: 72 tests passing
-```
-
-### Step 5.2: Build Verification
-
-```bash
-npm run build
-
-# Expected: No errors, successful build
-```
-
----
-
-## **PHASE 6: Security Audit (15 minutes)**
-
-### Step 6.1: Secret Scan
-
-```bash
-# Check for hardcoded secrets:
-grep -r "GMAIL_SERVICE_ACCOUNT" src/ app/ lib/  # Should return NOTHING
-grep -r "STAFF_API_KEY" src/ app/ lib/          # Should return NOTHING
-```
-
-### Step 6.2: Rate Limiting Test
-
-```bash
-# Test rate limiting (5 emails per minute):
-for i in {1..6}; do
-  curl -X POST https://your-app.vercel.app/api/admin/notifications/test \
-    -H "Authorization: Bearer YOUR_JWT_TOKEN"
-done
-
-# Expected: Requests 1-5: 202, Request 6: 429
-```
-
----
-
-## **PHASE 7: Monitoring Setup (15 minutes)**
-
-### Step 7.1: Logging Configuration
-
-```bash
-# In Vercel settings:
-# LOG_LEVEL=info (production)
-# Enable Vercel Analytics
-
-vercel logs --follow  # Watch deployment logs
-```
-
-### Step 7.2: Alert Configuration
-
-Monitor these metrics:
-- Failed jobs > 5 per hour
-- API errors > 10 per minute
-- Email delivery latency > 2 minutes
-- Redis connection timeouts
-
----
-
-## **PHASE 8: Post-Deployment Verification (30 minutes)**
-
-### Step 8.1: 24-Hour Checks
-
-```bash
-# 1. Send test email and verify arrival
-# 2. Test email reply with "done" command
-# 3. Verify task status updates
-# 4. Check notification bell updates
-# 5. Monitor error logs (should be EMPTY)
-```
-
-### Step 8.2: 1-Week Checks
-
-- Email delivery latency: avg < 2 minutes
-- API response time: avg < 200ms
-- Error rate: < 0.5%
-- Job success rate: > 95%
-
----
-
-## **Rollback Procedures**
-
-### Immediate Actions
-
-```bash
-# Stop notification jobs:
-# Set NOTIFICATION_QUEUE_ENABLED=false and redeploy
-
-# Clear failing jobs:
-redis-cli DEL bull:notification-queue:*
-
-# Disable all notifications:
-UPDATE notification_preferences SET enabled = false;
-```
-
-### Full Rollback
-
-```bash
-# Revert deployment:
-git revert HEAD
 vercel deploy --prod
+```
 
-# Restore database:
-supabase db restore --backup-name daily-YYYY-MM-DD
+Follow the build:
 
-# Clear Redis:
-redis-cli FLUSHALL
+```bash
+vercel logs --follow
 ```
 
 ---
 
-## **Deployment Checklist**
+## 4. Post-deployment verification
 
-- [ ] Environment variables configured
-- [ ] Database migrations applied
-- [ ] RLS policies enabled
-- [ ] Gmail service account set up
-- [ ] Pub/Sub webhook configured
-- [ ] Redis/BullMQ verified
-- [ ] All 72 tests passing
-- [ ] Build succeeds with no errors
-- [ ] Security audit passed
-- [ ] Monitoring & alerts configured
-- [ ] Post-deployment verification complete
-- [ ] All stakeholders signed off
+```bash
+# 1. Service and database connectivity
+curl -s https://task.conto.ec/api/health
 
-**Deployment Date:** ___________  
-**Deployed By:** ___________  
-**Verified By:** ___________  
+# 2. Scheduled-job health (pg_cron job freshness)
+curl -s https://task.conto.ec/api/health/cron
+```
+
+Then, in a browser:
+
+- [ ] Sign in with a real account.
+- [ ] The Kanban board at `/` loads with its columns and tasks.
+- [ ] Create a task, move it between columns, add a comment.
+- [ ] `/admin` opens as an organization owner and lists users.
+- [ ] A notification email arrives (validates Resend and the verified sender
+      domain).
+- [ ] If the Google integrations are in use: `/admin/integraciones` still
+      connects (validates the OAuth redirect URI).
+
+### Cron jobs
+
+`vercel.json` declares exactly **one** cron:
+
+```json
+{ "crons": [ { "path": "/api/cron/alert-check", "schedule": "0 8 * * *" } ] }
+```
+
+Daily at 08:00 UTC. It appears under *Vercel → Settings → Cron Jobs* after the
+first production deployment. The endpoint authenticates the caller with
+`CRON_SECRET` (sent as `Authorization: Bearer <CRON_SECRET>`, or as `?secret=`
+for external monitors that cannot set custom headers). Any document claiming
+additional crons in `vercel.json` is out of date.
 
 ---
 
-**Estimated Time:** 2 hours  
-**Difficulty:** Medium  
-**Rollback Time:** < 30 minutes  
+## 5. Rollback
 
-Ready to deploy! 🚀
+Rolling back is a Vercel-level operation; there is nothing to drain or flush.
+
+```bash
+# Promote the previous deployment
+vercel rollback
+
+# Or revert the code and redeploy
+git revert <sha>
+git push origin main
+```
+
+Then re-check `/api/health`.
+
+**Database rollback is not automatic.** A migration that must be undone needs a
+*new* migration file that reverses it — never edit or delete an applied
+migration. Restore from a Supabase backup (*Database → Backups*) only as a last
+resort, and only with the data loss window understood.
+
+---
+
+## 6. Notes and gotchas
+
+- **The `xlsx` dependency is installed from the SheetJS CDN**
+  (`https://cdn.sheetjs.com/xlsx-0.20.3/xlsx-0.20.3.tgz`), not from the npm
+  registry, because the npm-published version carries two unpatched HIGH
+  vulnerabilities (prototype pollution and ReDoS). This is deliberate: the
+  build machine must be able to reach that CDN, and this must **not** be
+  "fixed" by switching to `xlsx: ^0.18.5`.
+- **Node.js ≥ 20.9.0** is required (Next.js 16).
+- **`vercel env pull` overwrites `.env.local`.** Back it up first if it holds
+  values that are not in Vercel.
+- **`org_role` is not RBAC.** `organization_members.org_role` gates the admin
+  panel; the RLS policies that gate content mutations read `role_assignments`.
+  A newly created user with `org_role = 'admin'` but no `role_assignments` row
+  cannot create tasks. Worth re-testing after any deployment that touches user
+  provisioning.
+- The historical documents `BLOCKERS_RESOLUTION.md`, `BLOCKERS_FIXED.md`,
+  `VALIDATION_REPORT.md`, `docs/PRODUCTION_READINESS_CHECKLIST.md` and
+  `verify-blockers-fixed.sh` come from a 2026-08-18 planning exercise around
+  services this project never wired up (Slack alerting, PagerDuty, Twilio,
+  Datadog, a BullMQ worker). They are kept for history and are **not** part of
+  this procedure.
+
+---
+
+## 7. Monitoring after release
+
+Active monitoring is documented in [`OBSERVABILITY.md`](./OBSERVABILITY.md).
+In short, what exists today:
+
+- `/api/health` and `/api/health/cron` as probes.
+- `/api/cron/alert-check`, which posts failures to `ALERT_WEBHOOK_URL`
+  (a Slack/Discord-style incoming webhook) when a check fails.
+- Sentry is instrumented (`@sentry/nextjs`) but has no DSN configured, so error
+  tracking is effectively off until `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` are
+  set.
+- Vercel's own build and function logs (`vercel logs`).

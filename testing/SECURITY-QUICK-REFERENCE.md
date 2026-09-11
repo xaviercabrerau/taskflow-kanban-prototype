@@ -1,50 +1,46 @@
 # Security Testing Quick Reference Card
 
+> **Status: verified 2026-09-10.** The real flags are `--suite NAME` (not
+> `--section N`) and `--format json` (not a standalone `--json` flag); there is
+> no `--fast` flag. The endpoint list and CI/CD snippets further down were
+> written for routes this project does not have — see the notes inline.
+
 ## Run Tests
 
 ```bash
-# Full suite (all 10 sections, ~5-10 minutes)
+# Full suite (all 10 domains)
 ./2-security-testing.sh
 
-# Quick mode (skip external services, ~2 minutes)
-./2-security-testing.sh --fast
+# One suite only
+./2-security-testing.sh --suite input
 
-# Specific section only
-./2-security-testing.sh --section 1
-
-# CI/CD with JSON
-./2-security-testing.sh --json --fast
+# JSON output for CI/CD
+./2-security-testing.sh --format json
 
 # Debug mode
-./2-security-testing.sh --verbose --section 2
+./2-security-testing.sh --verbose --debug --suite auth
 ```
 
-## Test Sections at a Glance
+Valid `--suite` values: `all`, `input`, `auth`, `authz`, `ratelimit`,
+`exposure`, `api`, `email`, `external`, `secrets`, `compliance`.
 
-| # | Section | Focus | Count | Remediation |
-|---|---------|-------|-------|------------|
-| 1 | Input Validation | SQL/XSS/Command/Path attacks | 4 | Parameterize queries, escape output, validate paths |
-| 2 | Authentication | JWT validation, token checks | 5 | Verify JWT on all protected routes, check expiration |
-| 3 | Authorization | RLS, cross-org, privilege | 4 | Implement RLS policies, verify user ownership |
-| 4 | Rate Limiting | DDoS/brute force protection | 3 | Use sliding window, 100 req/min for /emit |
-| 5 | Data Exposure | Errors, headers, PII, logs | 4 | Generic errors, security headers, sanitize logs |
-| 6 | API Security | CORS, CSRF, timeouts | 4 | Restrict CORS, CSRF tokens, 30s timeout |
-| 7 | Email Security | Headers, XSS, spoofing | 4 | Sanitize headers, escape templates, verify From |
-| 8 | External Services | Failures, cascading issues | 4 | Circuit breakers, exponential backoff, timeouts |
-| 9 | Secrets Management | Leakage in logs/errors | 3 | Redact logs, generic errors, use secrets manager |
-| 10 | Compliance | Retention, audit, GDPR | 4 | Delete >90d, audit logs, GDPR endpoints |
+## Test Domains at a Glance
 
-## Critical Tests (Must Pass Before Production)
+| Suite value | Domain | Focus | Remediation |
+|---|---------|-------|------------|
+| `input` | Input Validation | SQL/XSS/Command/Path attacks | Parameterize queries, escape output, validate paths |
+| `auth` | Authentication | JWT validation, token checks | Verify JWT on all protected routes, check expiration |
+| `authz` | Authorization | RLS, cross-org, privilege | Enforce `role_assignments`-based RLS (see `../MIGRACION.md` and the architecture notes in `../dev/`), verify user ownership |
+| `ratelimit` | Rate Limiting | DDoS/brute force protection | Upstash-backed sliding window (`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`) |
+| `exposure` | Data Exposure | Errors, headers, PII, logs | Generic errors, security headers, sanitize logs |
+| `api` | API Security | CORS, CSRF, timeouts | Restrict CORS, CSRF tokens, request timeout |
+| `email` | Email Security | Headers, XSS, spoofing | Sanitize headers, escape templates, verify From (Resend) |
+| `external` | External Services | Failures, cascading issues | Circuit breakers, exponential backoff, timeouts |
+| `secrets` | Secrets Management | Leakage in logs/errors | Redact logs, generic errors, never log env values |
+| `compliance` | Compliance | Retention, audit, GDPR-style checks | See caveat below — this project has no dedicated audit-log or GDPR-export endpoints today |
 
-```
-Section 1: SQL Injection (test 1.1)
-Section 2: Missing JWT (test 2.1)
-Section 3: Cross-Org Access (test 3.1)
-Section 4: Rate Limiting (test 4.1)
-Section 5: Error Leakage (test 5.1)
-Section 9: Secrets in Errors (test 9.2)
-Section 10: Data Retention (test 10.1)
-```
+The exact test count per domain is not fixed in the script (some checks are
+conditional); don't treat the numbers in older drafts of this table as exact.
 
 ## Common Failures & Quick Fixes
 
@@ -155,35 +151,35 @@ const htmlBody = sanitizeHtml(userInput, {
 ### Environment Variables
 
 ```bash
-# URL of API to test
-export API_URL=http://localhost:3000
+# URL of API to test (the script reads BASE_URL, not API_URL)
+export BASE_URL=http://localhost:3000
 
 # Enable verbose logging
-export VERBOSE=1
+export VERBOSE=true
 
-# Output JSON for parsing
-export JSON_OUTPUT=1
+# Show curl request/response detail
+export DEBUG=true
 
-# Skip external service tests
-export FAST_MODE=1
+# Output format: text (default) or json
+export OUTPUT_FORMAT=json
 
-# Run only one section
-export SECTION_FILTER=2
+# Which suite to run (default: all)
+export TEST_SUITE=auth
 ```
 
-### Endpoint Requirements
+There is no `FAST_MODE` or `SECTION_FILTER` variable in the script.
 
-Tests assume these endpoints exist and are properly protected:
+### Endpoints the script actually touches
 
-```
-GET     /api/notifications              # List notifications
-POST    /api/notifications/emit         # Emit event
-GET     /api/notifications/preferences  # Get preferences
-PUT     /api/notifications/preferences  # Update preferences
-DELETE  /api/notifications/:id          # Delete notification
-GET     /api/audit-logs                 # Get audit logs
-GET     /api/gdpr/export-data           # Export user data
-```
+The real routes referenced by `2-security-testing.sh` are TaskFlow's actual
+API surface, not a generic `/api/notifications/*` REST API — notably
+`/api/health`, `/api/admin/notification-preferences`, `/api/admin/users`, and
+`/api/webhooks/gmail-reply` (a disabled 501 stub, see
+[`../docs/TESTING.md`](../docs/TESTING.md)). This project has **no**
+`/api/notifications`, `/api/notifications/emit`, `/api/audit-logs`, or
+`/api/gdpr/export-data` endpoints — an earlier version of this reference
+listed those, but they don't exist in `src/app/api/`. The compliance-suite
+checks that assume such endpoints will fail or no-op against this codebase.
 
 ## Reading Test Output
 
@@ -228,16 +224,14 @@ Pass Rate:     Percentage of tests passed
   run: |
     cd testing
     chmod +x 2-security-testing.sh
-    ./2-security-testing.sh --json --fast > results.json
-    
-    FAILED=$(jq '[.[] | select(.status == "FAIL")] | length' results.json)
-    if [ $FAILED -gt 0 ]; then
-      echo "❌ Security tests failed"
-      jq '.[] | select(.status == "FAIL")' results.json
-      exit 1
-    fi
-    echo "✅ All security tests passed"
+    ./2-security-testing.sh --format json
 ```
+
+This repository has **no `.github/workflows/`** today, so this is a starting
+point for adding one, not a description of an existing pipeline. The report is
+written to `./test-results/security-test-report-<timestamp>.json` (see
+`RESULTS_DIR` in the script) — parse that file rather than assuming stdout is
+valid JSON on its own.
 
 ### GitLab CI
 
@@ -247,26 +241,25 @@ security:
   script:
     - cd testing
     - chmod +x 2-security-testing.sh
-    - ./2-security-testing.sh --json --fast
+    - ./2-security-testing.sh --format json
   artifacts:
-    reports:
-      sast: results.json
+    paths:
+      - testing/test-results/
 ```
 
 ## Test Duration
 
-- **Full suite**: 5-10 minutes (includes external services)
-- **Fast mode**: 2-3 minutes (skips Gmail, Redis, Supabase)
-- **Single section**: 15-30 seconds
-- **CI/CD recommended**: Fast mode only
+- **Full suite**: a few minutes, depending on latency to `BASE_URL`
+- **Single suite** (`--suite NAME`): a fraction of that
+
+There is no fast/skip mode in the script.
 
 ## Resources
 
 - Documentation: See `SECURITY-TESTING-README.md`
 - OWASP Top 10: https://owasp.org/Top10/
 - CWE List: https://cwe.mitre.org/
-- GDPR Guide: https://gdpr-info.eu/
 
 ---
 
-**Pro Tip:** Run `./2-security-testing.sh --fast` before every commit to catch issues early!
+**Pro Tip:** Run `./2-security-testing.sh` before every deploy to catch issues early.

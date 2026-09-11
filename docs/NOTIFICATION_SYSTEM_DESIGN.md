@@ -4,17 +4,40 @@
 **Version:** 1.0
 **Date:** 2026-08-16
 **Phase:** Semana 3 Punto 6
-**Status:** Partially implemented (2026-08-28) — see
-[`OBSERVABILITY.md`](../OBSERVABILITY.md#6-notification-system--email--in-app)
-for the current, accurate state. Key deviations from this design as
-originally written: the BullMQ worker described in section 1 was never
-implemented (Vercel serverless can't host a persistent queue consumer) —
-replaced by a synchronous send path in `src/lib/notifications/notify.ts`.
-Only 2 of the 8 event types are wired to a real call site today
-(`task_mentioned`, `status_changed`). Sending goes through Resend, not the
-Gmail API — no Google Workspace account exists yet to send/receive via a
-real Gmail mailbox, so the *inbound* reply-parsing half of this design
-(section 5) is entirely unbuilt/blocked, not just unconfigured.
+**Status (re-verified against the code 2026-09-09):** the *outbound* half is
+implemented; the *inbound* half is blocked. This document is the original
+design and is kept for context — where it disagrees with the notes below,
+the notes are correct. See also
+[`OBSERVABILITY.md`](../OBSERVABILITY.md#6-notification-system--email--in-app).
+
+Deviations from this design as originally written:
+
+- **No BullMQ, no queue.** The worker in section 1 was never implemented —
+  Vercel serverless cannot host a persistent queue consumer. It is replaced
+  by a synchronous best-effort send path, `sendNotification()` in
+  `src/lib/notifications/notify.ts`. There is no retry queue; failures are
+  recorded in `failed_jobs` and never block the underlying action.
+- **All 8 event types are wired** (this superseded the earlier "2 of 8"
+  note). `task_mentioned` and `status_changed` were wired in
+  `20260828190100_wire_email_notifications_via_triggers.sql`; the remaining
+  six in `20260829010000_wire_remaining_notification_events.sql`, corrected
+  by `20260830150000_fix_notify_eventtype_and_url_regression.sql`.
+- **Events are emitted from Postgres triggers, not from API routes.**
+  Triggers call `net.http_post` → `POST /api/internal/notify-event`
+  (authenticated with `INTERNAL_NOTIFY_SECRET`). This keeps RLS as the single
+  authorization boundary while side effects stay server-side. When wiring
+  anything new, follow the same pattern — never call `sendNotification()`
+  from a client component or from `BoardContext`.
+  Note that these triggers embed `https://task.conto.ec` as a **literal** in
+  the migration file; changing the production domain requires a new migration.
+- **Email goes through Resend**, not the Gmail API, using the React Email
+  templates (`src/lib/emails/`).
+- **The inbound reply-parsing half (section 5) does not exist.**
+  `/api/webhooks/gmail-reply` returns `501`. It needs a Google Workspace
+  account with Domain-Wide Delegation and a Cloud Pub/Sub subscription, which
+  do not exist. It previously shipped as a stub with a hardcoded
+  `return true` in place of signature verification — disabled rather than
+  left exploitable.
 
 ---
 
@@ -70,6 +93,15 @@ TaskFlow Notification System delivers **8 event types** across **2 channels** (E
 
 ## 3. Database Schema (4 new tables)
 
+> **Reality check (2026-09-09):** the four tables exist
+> (`notification_preferences`, `notifications`, `email_threads`,
+> `failed_jobs`), but the shipped columns differ from the sketch below — most
+> importantly `notifications` uses a **`read_at` timestamp**, not a `read`
+> boolean. Code that wrote to a `read` column silently failed in production
+> until it was fixed. The authoritative shape is the migrations
+> (`20260828190000_notification_system_schema_reconciliation.sql`) and
+> `src/lib/supabase/database.types.ts`.
+
 ```sql
 -- notification_preferences: user controls which events/channels they receive
 CREATE TABLE notification_preferences (
@@ -123,6 +155,16 @@ CREATE TABLE failed_jobs (
 ---
 
 ## 4. API Endpoints (5 new)
+
+> **Reality check (2026-09-09):** of the endpoints below, only
+> `GET`/`PATCH /api/admin/notification-preferences` and
+> `POST /api/webhooks/gmail-reply` (returning `501`) exist.
+> `POST /api/admin/notifications/test`, `GET /api/admin/notifications` and
+> `PATCH /api/admin/notifications/{id}` were never built — in-app
+> notifications are read and marked read client-side through
+> `src/lib/supabase/notifications-repo.ts` under RLS, not through an API
+> route. The real, complete route list is
+> [`API_ENDPOINTS.md`](./API_ENDPOINTS.md).
 
 **`GET /api/admin/notification-preferences`**
 - Returns user's preferences for all 8 events × 2 channels
@@ -192,6 +234,12 @@ All use BaseLayout with logo + footer + unsubscribe link.
 
 ## 7. UI Components (3 new)
 
+> **Reality check (2026-09-09):** only `NotificationBell.tsx` exists (in the
+> topbar, fed by `BoardContext`). There is **no** `/admin/notificaciones`
+> page and no `NotificationCenter.tsx`; preferences are stored in
+> `notification_preferences` and reachable only through the
+> `/api/admin/notification-preferences` route, with no UI on top of it yet.
+
 **`/admin/notificaciones` Page**
 - Table: 8 events × 2 channels
 - Toggles to enable/disable each combination
@@ -235,6 +283,8 @@ All use BaseLayout with logo + footer + unsubscribe link.
 
 ## 9. Dependencies
 
+Originally planned:
+
 ```json
 {
   "bullmq": "^3.x",
@@ -246,25 +296,46 @@ All use BaseLayout with logo + footer + unsubscribe link.
 }
 ```
 
+> **Reality check (2026-09-09):** none of `bullmq`, `@vercel/kv`,
+> `@react-email/components`, `googleapis` or `html-to-text` is in
+> `package.json`. What is actually installed for this feature is
+> `resend ^4.0.1` and `react-email ^6.9.2`. Rate limiting uses
+> `@upstash/redis` / `@upstash/ratelimit`, not `@vercel/kv` (though
+> `src/lib/rate-limit.ts` still accepts the `KV_REST_API_*` variable names the
+> Vercel Marketplace Upstash integration provisions).
+
 ---
 
 ## 10. Deployment Requirements
 
-- Gmail API credentials (Google Cloud Console)
-- Google Cloud Pub/Sub topic + webhook registered
-- Vercel KV linked in environment
-- `NOTIFICATION_FROM_EMAIL` env variable
-- `JWT_SECRET` for email header signing
-- Supabase migrations applied (4 tables)
-- Sentry project for error tracking
+What the **outbound** path actually needs today:
+
+- `RESEND_API_KEY` + a domain verified in Resend
+- `NOTIFICATION_FROM_EMAIL` on that verified domain
+- `NEXT_PUBLIC_APP_URL` (absolute links in emails; must be the real public
+  URL, `https://task.conto.ec` in production)
+- `INTERNAL_NOTIFY_SECRET`, shared between Vercel and the Postgres triggers
+  that call `/api/internal/notify-event`
+- `SUPABASE_SERVICE_ROLE_KEY` — `notify.ts` runs server-side with it
+- Migrations applied (tables **and** the notification triggers)
+- Sentry project (optional)
+
+Only needed for the still-unbuilt inbound path: Gmail API credentials with
+Domain-Wide Delegation and a Google Cloud Pub/Sub topic + subscription.
+`JWT_SECRET` is **not** used for email header signing — in this codebase it
+signs the Google OAuth `state` parameter. Vercel KV is not required.
 
 ---
 
 ## Success Criteria (original targets — see actual status below each)
 
 - 8 event types → email + in-app notifications
-  — ⚠️ 2/8 wired (`task_mentioned`, `status_changed`); the other 6 have
-  code support in `notify.ts` but no real call site yet.
+  — ✅ 8/8 wired via Postgres triggers as of
+  `20260829010000_wire_remaining_notification_events.sql`
+  (`task_assigned`, `comment_added`, `task_completed` on their own tables;
+  `member_invited` on `organization_members`; `project_created` on `boards`,
+  scoped to org owners/admins; `due_soon` inside the existing hourly cron
+  function; `task_mentioned` and `status_changed` from the earlier pass).
 - Gmail replies parsed (`/done`, `/comment`)
   — ❌ blocked; no Google Workspace account exists to send/receive via.
   `/api/webhooks/gmail-reply` returns `501`.

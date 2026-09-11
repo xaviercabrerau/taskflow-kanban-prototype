@@ -1,6 +1,51 @@
 # Load Testing Setup Guide
 
-This guide explains how to set up test users and credentials for running load tests against the TaskFlow Notification System.
+> ## ⚠️ REFERENCE GUIDE — NOT OPERATIONAL AS WRITTEN
+>
+> **Verified against the code on 2026-09-10.** Load testing is not part of this
+> project's tooling and the procedure below does not currently work end to end:
+>
+> - **k6 is not a project dependency** and there is no npm script for it.
+>   `package.json` has exactly seven scripts: `dev`, `build`, `start`, `lint`,
+>   `test`, `test:watch`, `test:coverage`. k6 would have to be installed
+>   separately on the machine running the test.
+> - **The auth model in this guide is wrong for this app.** It tells you to
+>   generate a Supabase JWT and send `Authorization: Bearer <JWT>`. The endpoints
+>   the script targets (`/api/admin/*`) authenticate with a **Supabase session
+>   cookie**, not a bearer header — they will return `401` for every request. The
+>   only routes that accept a bearer token are `/api/v1/*` and `/api/mcp`, and
+>   those take `tfmcp_...` personal access tokens issued from `/admin/api-keys`,
+>   not Supabase JWTs.
+> - **`testing/load-test.js` targets an endpoint that does not exist:**
+>   `/api/events/trigger-notifications`. There are 31 route files in
+>   `src/app/api`, and that is not one of them — see
+>   [`API_ENDPOINTS.md`](./API_ENDPOINTS.md).
+> - **Rate limiting will dominate any result.** Every route that matters is rate
+>   limited (30 req/min per caller via Upstash, or a conservative 10 req/min
+>   in-memory fallback when Upstash is unconfigured). A load test that ignores
+>   this measures the limiter, not the app.
+> - The `docker-compose.grafana.yml` at the repo root does exist, but it is a
+>   local Postgres + Grafana stack, not wired to any load-test pipeline.
+>
+> **The only endpoint that can be load tested as-is** is `GET /api/health` — it is
+> public, unauthenticated, and safe to hit at any frequency.
+>
+> Treat the rest of this document as a starting point that needs reworking before
+> use: fix the auth scheme, drop or replace the nonexistent endpoint, and decide
+> what to do about rate limits (raise them for a test window, or accept `429`s as
+> the expected result).
+>
+> **Migration note:** any `BASE_URL` used here points at the current production
+> host `https://task.conto.ec`. On a move to another account, see
+> [`MIGRACION.md`](../MIGRACION.md). Never put a token or password value into this
+> file — reference the environment variable name only.
+
+**Status:** reference guide — **not operational as written**
+**Last verified against the code:** 2026-09-10
+
+---
+
+This guide explains how to set up test users and credentials for running load tests against TaskFlow.
 
 ## Overview
 

@@ -2,15 +2,28 @@
 
 Complete testing infrastructure for the TaskFlow Notification System.
 
+> **Status: verified 2026-09-10** against the actual scripts in this directory.
+> `2-security-testing.sh` and the K6 load-testing scripts are real and runnable,
+> but several flags and behaviors described in earlier versions of this
+> directory's docs do not exist in the code — see the corrections below and in
+> [`SECURITY-TESTING-README.md`](./SECURITY-TESTING-README.md). These are
+> manually-run tools, separate from the automated `npm test` suite documented
+> in [`../docs/TESTING.md`](../docs/TESTING.md).
+
 ## Overview
 
-This directory contains the complete testing infrastructure for TaskFlow:
+This directory contains manually-run testing tools for TaskFlow (load and
+security testing, plus token/user generation helpers under `../scripts/`):
 
-1. **2-security-testing.sh** - Comprehensive security test suite (41KB, 800+ lines)
-2. **SECURITY-TESTING-README.md** - Complete documentation with remediation guides
+1. **2-security-testing.sh** - Bash security test script (993 lines)
+2. **SECURITY-TESTING-README.md** - Detailed documentation with remediation guides
 3. **SECURITY-QUICK-REFERENCE.md** - Quick reference card for common tasks
-4. **1-load-testing.yaml** - Load testing configuration
-5. **load-test.js** - Load test execution script
+4. **SECURITY-SCRIPT-SUMMARY.md** / **SECURITY-TESTING-GUIDE.md** - additional
+   summaries of the same script
+5. **1-load-testing.yaml** - Load test scenario reference/config (the K6 script
+   does not read this file — see the note under Test Configuration below)
+6. **load-test.js** - K6 load test script
+7. **run-load-tests.sh** - convenience wrapper around `k6 run load-test.js`
 
 ## Quick Start
 
@@ -21,22 +34,35 @@ cd testing
 ./2-security-testing.sh
 ```
 
-### Run Specific Section
+### Run a Specific Suite
 
 ```bash
-# Test only authentication (Section 2)
-./2-security-testing.sh --section 2
+# Test only authentication
+./2-security-testing.sh --suite auth
 
-# Fast mode (skip external services)
-./2-security-testing.sh --fast
-
-# With JSON output for CI/CD
-./2-security-testing.sh --json
+# JSON output for CI/CD
+./2-security-testing.sh --format json
 ```
+
+Valid `--suite` values: `all`, `input`, `auth`, `authz`, `ratelimit`,
+`exposure`, `api`, `email`, `external`, `secrets`, `compliance`. There is no
+`--fast` flag and no `--section N` flag — earlier drafts of this README
+described both, but the script only accepts `--base-url`, `--suite`,
+`--format`, `--verbose`, `--debug`, `--html`, and `--help` (see
+`./2-security-testing.sh --help`). The `--html` flag is parsed but does
+**not** currently generate an HTML report — only the text and JSON reports
+implemented in the script are actually written.
 
 ## Test Coverage
 
-The security testing suite covers **10 critical domains** with **40+ individual tests**:
+The security testing suite covers **10 domains** (`test_input_validation`,
+`test_authentication`, `test_authorization`, `test_rate_limiting`,
+`test_data_exposure`, `test_api_security`, `test_email_security`,
+`test_external_services`, `test_secret_management`, `test_compliance` in the
+script) with roughly 40 individual pass/fail/warn checks in total. Exact
+per-domain counts vary by run (some checks are conditional); the breakdown
+below is illustrative, not a guaranteed count — see
+`SECURITY-SCRIPT-SUMMARY.md` for the closest audited count.
 
 ### 1. Input Validation (4 tests)
 - SQL Injection prevention
@@ -101,19 +127,19 @@ The security testing suite covers **10 critical domains** with **40+ individual 
 
 ### Main Script: 2-security-testing.sh
 
-**Size:** 41KB | **Lines:** 800+ | **Languages:** Bash 4.0+
+**Size:** ~993 lines | **Language:** Bash 4.0+
 
 **Key Features:**
 - Color-coded output (✓, ✗, ⚠)
-- JSON export for CI/CD
-- Per-section testing
-- Verbose mode for debugging
-- Fast mode for quick checks
+- Text and JSON reports for CI/CD (`--format json`; no HTML report is
+  actually generated despite the `--html` flag being accepted)
+- Per-suite testing (`--suite NAME`)
+- Verbose and debug modes for troubleshooting
 - Exit codes for automation
 
 **Usage:**
 ```bash
-./2-security-testing.sh [--json] [--verbose] [--fast] [--section N] [--no-color]
+./2-security-testing.sh [--base-url URL] [--suite NAME] [--format text|json] [--verbose] [--debug] [--html] [--help]
 ```
 
 **Exit Codes:**
@@ -151,14 +177,18 @@ The security testing suite covers **10 critical domains** with **40+ individual 
   run: |
     cd testing
     chmod +x 2-security-testing.sh
-    ./2-security-testing.sh --json --fast
+    ./2-security-testing.sh --format json
 ```
+
+This repository has **no `.github/workflows/`** configured — there is no CI
+pipeline actually running this today; the snippet above is a starting point if
+you add one.
 
 ### Local Development
 
 ```bash
 # Watch mode - re-run on file changes
-watch -n 10 'cd testing && ./2-security-testing.sh --fast'
+watch -n 10 'cd testing && ./2-security-testing.sh'
 ```
 
 ## Test Results
@@ -195,7 +225,7 @@ testing/
 - Python 3 (optional)
 
 ### API Setup
-- API running at `http://localhost:3000` or `$API_URL`
+- API running at `http://localhost:3000` or the URL passed via `$BASE_URL` / `--base-url`
 - Endpoints properly protected with authentication
 - Rate limiting configured
 - Security headers enabled
@@ -207,44 +237,54 @@ testing/
 ./2-security-testing.sh
 
 # Run input validation tests
-./2-security-testing.sh --section 1
+./2-security-testing.sh --suite input
 
 # Run authentication tests
-./2-security-testing.sh --section 2
+./2-security-testing.sh --suite auth
 
 # Run authorization tests
-./2-security-testing.sh --section 3
+./2-security-testing.sh --suite authz
 
-# Fast mode for CI/CD
-./2-security-testing.sh --json --fast
+# JSON output for CI/CD
+./2-security-testing.sh --format json
 
 # Debug mode with full output
-./2-security-testing.sh --verbose --section 2
+./2-security-testing.sh --verbose --debug --suite auth
 
-# Specific test only
-./2-security-testing.sh --section 5  # Data exposure
+# Specific suite only
+./2-security-testing.sh --suite exposure  # Data exposure
 ```
 
 ## Test Configuration
 
-Set environment variables to customize:
+Set environment variables to customize (matching the script's real defaults):
 
 ```bash
-# API URL (default: http://localhost:3000)
-export API_URL=http://api.example.com
+# Base URL (default: http://localhost:3000) — the script reads BASE_URL, not API_URL
+export BASE_URL=http://api.example.com
 
 # Enable verbose output
-export VERBOSE=1
+export VERBOSE=true
 
-# Output JSON instead of text
-export JSON_OUTPUT=1
+# Show curl request/response detail
+export DEBUG=true
 
-# Skip external service tests
-export FAST_MODE=1
+# Output format: text (default) or json
+export OUTPUT_FORMAT=json
 
-# Run only one section
-export SECTION_FILTER=3
+# Request timeout in seconds (default: 10)
+export TIMEOUT=30
+
+# Which suite to run (default: all)
+export TEST_SUITE=auth
+
+# Where reports are written (default: ./test-results)
+export RESULTS_DIR=./test-results
 ```
+
+There is no `FAST_MODE`, `JSON_OUTPUT`, `SECTION_FILTER`, or `API_URL`
+environment variable in the script — those were documented here previously
+but do not exist in `2-security-testing.sh`.
 
 ## Troubleshooting
 
@@ -255,25 +295,25 @@ export SECTION_FILTER=3
 curl http://localhost:3000/api/health
 
 # Try with custom URL
-API_URL=http://your-api:3000 ./2-security-testing.sh
+./2-security-testing.sh --base-url http://your-api:3000
 ```
 
 ### Email/Gmail tests failing
 
-```bash
-# Gmail integration not needed for tests
-./2-security-testing.sh --fast
-```
+`POST /api/webhooks/gmail-reply` is a disabled `501` stub in this codebase
+(see `../docs/TESTING.md`), so the script's Gmail-related check expects that
+501/disabled response rather than a live Gmail integration.
 
 ### Rate limiting tests inconclusive
 
 ```bash
 # Run rate limiting tests separately
-./2-security-testing.sh --section 4
-
-# Clear Redis cache if used
-redis-cli FLUSHDB
+./2-security-testing.sh --suite ratelimit
 ```
+
+Rate limiting in this app is backed by Upstash Redis over HTTPS
+(`UPSTASH_REDIS_REST_URL` / `UPSTASH_REDIS_REST_TOKEN`), not a local Redis
+instance, so `redis-cli FLUSHDB` will not affect it.
 
 ## Security Checklist
 
@@ -291,10 +331,11 @@ Use before every production deployment:
 
 ## Performance
 
-- **Full suite**: ~5-10 minutes
-- **Fast mode**: ~2-3 minutes
-- **Single section**: ~15-30 seconds
-- **CI/CD recommended**: Fast mode
+- **Full suite**: roughly a few minutes, depending on network latency to `BASE_URL`
+- **Single suite** (`--suite NAME`): a fraction of that
+
+There is no fast/skip mode in the script; running a single `--suite` is the
+only way to shorten a run.
 
 ## Support
 
@@ -314,13 +355,15 @@ For questions or issues:
 
 ## Related Documents
 
-- Architecture: `AGENTS.md`
 - Notification System: `src/lib/notifications/`
-- API Documentation: See Next.js routes
-- Security Policy: See project SECURITY.md
+- API routes: `src/app/api/**/route.ts`
+- Automated tests (`npm test`): [`../docs/TESTING.md`](../docs/TESTING.md)
+
+There is no `SECURITY.md` file in this repository — a previous version of
+this document pointed to one that does not exist.
 
 ---
 
-**Last Updated:** 2026-08-18
-**Version:** 1.0
-**Maintained by:** Security Team
+**Last Updated:** 2026-09-10 (this correction pass)
+**Maintained by:** whoever runs it — there is no dedicated "Security Team" in
+this project.

@@ -3,6 +3,27 @@
 **Project:** TaskFlow Kanban Prototype  
 **Scope:** Scripts and Configuration Validation  
 
+> **Update note (2026-09-10):** this report is kept as a historical record
+> of the date above and is not rewritten, but several items it validates
+> describe services the project never actually adopted — treat these as
+> false if read as today's state:
+> - **PagerDuty integration, SMS alerts (Twilio), Datadog commands** — none
+>   of these exist in the codebase. The real alerting path today is
+>   `GET /api/cron/alert-check` posting to a single `ALERT_WEBHOOK_URL`
+>   (Slack/Discord-compatible payload) — see `OBSERVABILITY.md` section 3.
+> - **`check_bullmq_health` / BullMQ queue depth monitoring** — the
+>   notification system was never built on BullMQ; it sends synchronously
+>   (`src/lib/notifications/notify.ts`), with failures recorded to
+>   `public.failed_jobs` and no retry queue. See `OBSERVABILITY.md`
+>   section 6.
+> - **`check_gmail_api_health` / Google Cloud Pub/Sub verification** —
+>   inbound Gmail reply parsing is not built; `/api/webhooks/gmail-reply`
+>   intentionally returns `501`. See `OBSERVABILITY.md` section 6.
+> - **GDPR compliance / endpoints** referenced in this report are not
+>   implemented today — see `PRIVACY_POLICY.md` section 8.
+> - Current real test count: **15 suites, 215 tests** (Jest), not the
+>   shell-script function counts tallied in this report.
+
 ---
 
 ## Executive Summary

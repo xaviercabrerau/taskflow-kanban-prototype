@@ -1,318 +1,152 @@
-# Testing Quick Reference Guide
-
-Quick reference for running load tests, security tests, and monitoring the TaskFlow Notification System.
-
-## TL;DR Setup (5 minutes)
-
-```bash
-# 1. Create test users (first time only)
-export SUPABASE_URL="https://your-project.supabase.co"
-export SUPABASE_SERVICE_ROLE_KEY="your-service-role-key"
-node scripts/generate-test-users.js 50
-
-# 2. Generate JWT tokens (before each test session)
-export SUPABASE_ANON_KEY="your-anon-key"
-node scripts/generate-test-tokens.js 5
-
-# 3. Run baseline load test (5 minutes)
-export AUTH_TOKEN="Bearer <token-from-step-2>"
-./testing/run-load-tests.sh
-
-# Done! Check testing/results/ for reports
-```
-
-## Common Commands
-
-### Load Testing
-
-```bash
-# Baseline (5 min, 10 VUs)
-./testing/run-load-tests.sh
-
-# Ramp-up test (15 min, gradual 10→100 VUs)
-./testing/run-load-tests.sh -s ramp_up
-
-# Spike test (10 min, sudden 500 VUs)
-./testing/run-load-tests.sh -s spike
-
-# Stress test (20 min, up to breaking point)
-./testing/run-load-tests.sh -s stress
-
-# Endurance test (60 min, 50 VUs)
-./testing/run-load-tests.sh -s endurance
-
-# Email delivery test (30 min)
-./testing/run-load-tests.sh -s email_delivery
-
-# Custom: 200 VUs for 10 minutes
-k6 run --vus 200 --duration 10m testing/load-test.js
-
-# Export to CSV (for Excel analysis)
-./testing/run-load-tests.sh -f csv
-
-# Dry run (show command without executing)
-./testing/run-load-tests.sh --dry-run
-```
-
-### Security Testing
-
-```bash
-# Run all security tests
-./testing/2-security-testing.sh
-
-# Specific test suite
-./testing/2-security-testing.sh --suite input          # Input validation
-./testing/2-security-testing.sh --suite auth           # Authentication
-./testing/2-security-testing.sh --suite compliance     # GDPR/compliance
-
-# Verbose output (shows details)
-./testing/2-security-testing.sh --verbose
-
-# Debug mode (shows curl requests/responses)
-./testing/2-security-testing.sh --debug
-
-# JSON output (for CI/CD integration)
-./testing/2-security-testing.sh --format json
-
-# Against staging
-BASE_URL=https://staging.taskflow.app ./testing/2-security-testing.sh
-```
-
-### Credential Management
-
-```bash
-# Generate test users (one-time)
-node scripts/generate-test-users.js 10        # 10 users
-node scripts/generate-test-users.js 50        # 50 users
-node scripts/generate-test-users.js 100       # 100 users
-
-# Generate JWT tokens (before each test session)
-node scripts/generate-test-tokens.js           # 5 tokens
-node scripts/generate-test-tokens.js 20        # 20 tokens
-node scripts/generate-test-tokens.js 50        # 50 tokens
-
-# Verify credentials work
-./scripts/test-credentials.sh
-```
-
-## Environment Setup
-
-### Required Environment Variables
-
-```bash
-# Load Testing
-export BASE_URL="http://localhost:3000"
-export AUTH_TOKEN="Bearer <jwt_token>"
-export TEST_USER_ID="<user-uuid>"
-export ORGANIZATION_ID="<org-uuid>"
-
-# Supabase (for credential generation)
-export SUPABASE_URL="https://your-project.supabase.co"
-export SUPABASE_ANON_KEY="<anon-key>"
-export SUPABASE_SERVICE_ROLE_KEY="<service-role-key>"
-
-# Sentry (optional - for error tracking)
-export NEXT_PUBLIC_SENTRY_DSN="https://key@ingest.sentry.io/projectId"
-```
-
-### Save to .env.local
-
-```bash
-# .env.local
-BASE_URL=http://localhost:3000
-AUTH_TOKEN=Bearer eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-TEST_USER_ID=550e8400-e29b-41d4-a716-446655440000
-ORGANIZATION_ID=660e8400-e29b-41d4-a716-446655440000
-
-# For generating credentials
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_ANON_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-SUPABASE_SERVICE_ROLE_KEY=eyJhbGciOiJIUzI1NiIsInR5cCI6IkpXVCJ9...
-
-# For Sentry error tracking
-NEXT_PUBLIC_SENTRY_DSN=https://key@ingest.sentry.io/projectId
-SENTRY_ENABLED=true
-SENTRY_ENVIRONMENT=development
-SENTRY_TRACE_SAMPLE_RATE=1.0
-```
-
-## Interpreting Results
-
-### Load Test Success Criteria
-
-| Metric | Good | Warning | Critical |
-|--------|------|---------|----------|
-| **P95 Latency** | < 500ms | 500-800ms | > 800ms |
-| **P99 Latency** | < 1000ms | 1-2s | > 2s |
-| **Error Rate** | < 0.1% | 0.1-1% | > 1% |
-| **Success Rate** | > 99.9% | 99-99.9% | < 99% |
-| **CPU Usage** | < 50% | 50-75% | > 75% |
-| **Memory** | < 50% | 50-75% | > 75% |
-
-### Example: Good Results
-
-```
-Load Test Results
-====================
-Tests Run:     1,500
-Passed:        1,499
-Failed:        1
-Success Rate:  99.93% ✓
-
-Latency (response time)
-p50:  120ms
-p95:  450ms ✓
-p99:  850ms ✓
-
-Throughput:    300 req/sec ✓
-Error Rate:    0.07% ✓
-```
-
-### Example: Needs Investigation
-
-```
-Load Test Results
-====================
-Tests Run:     1,500
-Passed:        1,485
-Failed:        15
-Success Rate:  99.0% ⚠
-
-Latency (response time)
-p50:  200ms
-p95:  1200ms ⚠ (exceeds 500ms SLA)
-p99:  2500ms ✗ (exceeds 1000ms SLA)
-
-Throughput:    250 req/sec ✓
-Error Rate:    1.0% ⚠ (exceeds 0.1% SLA)
-```
-
-**Next Step:** Review LOAD_TEST_SETUP.md troubleshooting section
-
-## File Locations
-
-### Documentation
-- `docs/LOAD_TEST_SETUP.md` - Comprehensive load testing guide
-- `docs/SECURITY_ENDPOINTS_CHECKLIST.md` - Pending endpoint specifications
-- `docs/SENTRY_SETUP.md` - Error tracking setup
-- `docs/BLOCKERS_RESOLUTION_SUMMARY.md` - Overview of all fixes
-- `docs/TESTING.md` - General testing strategy
-- `docs/API_ENDPOINTS.md` - API reference
-
-### Test Automation
-- `testing/run-load-tests.sh` - Load test runner
-- `testing/1-load-testing.yaml` - K6 configuration
-- `testing/2-security-testing.sh` - Security test suite
-- `scripts/generate-test-users.js` - Create test users
-- `scripts/generate-test-tokens.js` - Generate JWT tokens
-- `scripts/test-credentials.sh` - Verify credentials
-
-### Results
-- `testing/results/` - Test results and logs
-- `test-tokens.json` - Generated tokens (keep secure!)
-- `test-users-credentials.json` - User credentials (keep secure!)
-
-## Troubleshooting
-
-### "401 Unauthorized"
-```bash
-# Token expired? Regenerate:
-node scripts/generate-test-tokens.js
-
-# Token invalid? Verify it exists:
-echo $AUTH_TOKEN
-
-# Wrong BASE_URL? Check:
-echo $BASE_URL
-```
-
-### "404 Not Found"
-```bash
-# Service not running? Start dev server:
-npm run dev
-
-# Wrong endpoint? Check:
-curl http://localhost:3000/api/health
-
-# Endpoint not implemented yet? See:
-# docs/SECURITY_ENDPOINTS_CHECKLIST.md
-```
-
-### "429 Too Many Requests"
-```bash
-# Rate limited? Reduce VU count:
-./testing/run-load-tests.sh -s baseline  # Uses 10 VUs
-
-# Or wait for rate limit window to reset:
-# Usually 1 minute for development
-sleep 60
-```
-
-### "Connection refused"
-```bash
-# Service not running:
-npm run dev
-
-# Wrong BASE_URL:
-export BASE_URL="http://localhost:3000"
-
-# Firewall blocking? Try:
-curl -v http://localhost:3000/api/health
-```
-
-## Weekly Checklist
-
-- [ ] Monday morning: Run baseline test
-- [ ] Review results in testing/results/
-- [ ] Check for performance regressions
-- [ ] Update test tokens if > 1 week old
-- [ ] Review Sentry dashboard for errors
-- [ ] Document any issues found
-
-## Before Production Deployment
-
-- [ ] Implement missing GDPR endpoints (docs/SECURITY_ENDPOINTS_CHECKLIST.md)
-- [ ] Run full security test suite: `./testing/2-security-testing.sh`
-- [ ] Run stress test: `./testing/run-load-tests.sh -s stress`
-- [ ] Verify Sentry configured: `curl http://localhost:3000/api/test-sentry`
-- [ ] All tests pass with ✓ (no failures or critical warnings)
-- [ ] Document results in testing/results/
-- [ ] Notify ops team of any critical findings
-
-## Performance Targets
-
-### Email Notifications
-- Delivery latency (p95): < 2 minutes
-- Success rate: > 99.5%
-- Bounce rate: < 0.5%
-
-### API Endpoints
-- Response time (p95): < 500ms
-- Error rate: < 0.1%
-- Availability: > 99.9%
-
-### Database
-- Connection pool utilization: < 90%
-- Query latency (p95): < 100ms
-- Lock wait time: < 10ms
-
-## Getting Help
-
-1. **Load Testing Issues** → Read `docs/LOAD_TEST_SETUP.md`
-2. **Missing Endpoints** → Read `docs/SECURITY_ENDPOINTS_CHECKLIST.md`
-3. **Error Tracking** → Read `docs/SENTRY_SETUP.md`
-4. **Overall Context** → Read `docs/BLOCKERS_RESOLUTION_SUMMARY.md`
-5. **General Testing** → Read `docs/TESTING.md`
-
-## Key Contacts
-
-- **Load Testing:** ops-team@taskflow.app
-- **Security Testing:** security-team@taskflow.app
-- **Error Tracking:** devops-team@taskflow.app
-- **General Questions:** engineering-team@taskflow.app
+# Testing Quick Reference
+
+> **Verified against the code on 2026-09-10.** Current state: **15 suites /
+> 215 tests, all passing** (`npm test`, ~1.5s). Consistent with
+> [`TESTING.md`](./TESTING.md), which is the full guide — this page is just the
+> commands.
 
 ---
 
-**Last Updated:** 2026-08-18  
-**Next Review:** 2026-09-15  
-**Status:** READY FOR USE
+## The four commands you actually need
+
+```bash
+npm test              # jest — run every suite once and exit
+npm run test:watch    # jest --watch — re-run affected suites on file change
+npm run test:coverage # jest --coverage — coverage report
+npx tsc --noEmit      # type check (there is NO npm script for this)
+```
+
+`npm run lint` runs ESLint. That is the complete list of test-related scripts in
+`package.json`; anything else you may have read elsewhere does not exist.
+
+### Running a subset
+
+```bash
+npx jest src/lib/import                     # by path
+npx jest -t "BOM"                           # by test name
+npx jest src/app/api/admin/users --coverage # one area, with coverage
+```
+
+---
+
+## What is actually covered
+
+Jest 29 + ts-jest, `testEnvironment: "node"`, `testMatch: **/__tests__/**/*.test.ts`
+under `src/` (see `jest.config.ts`). All 15 suites:
+
+| Suite | Area |
+|---|---|
+| `src/app/api/admin/import-tasks/__tests__/route.test.ts` | Bulk task import route |
+| `src/app/api/admin/notification-preferences/__tests__/route.test.ts` | Notification preferences route |
+| `src/app/api/admin/users/__tests__/route.test.ts` | User list/create route |
+| `src/app/api/admin/users/__tests__/[id].route.test.ts` | Single-user GET/PUT/DELETE |
+| `src/app/api/internal/notify-event/__tests__/route.test.ts` | Internal notify webhook |
+| `src/app/api/webhooks/gmail-reply/__tests__/route.test.ts` | Gmail reply endpoint (currently a `501`) |
+| `src/lib/emails/__tests__/templates.test.ts` | React Email templates |
+| `src/lib/emails/__tests__/utils.test.ts` | Email helpers (incl. `sanitizeForEmail`) |
+| `src/lib/google/__tests__/drive.test.ts` | Google Drive helpers |
+| `src/lib/google/__tests__/oauth.test.ts` | OAuth state signing (`JWT_SECRET`) |
+| `src/lib/import/__tests__/task-row.test.ts` | Import row parsing, incl. UTF-8 BOM regression |
+| `src/lib/notifications/__tests__/notify.test.ts` | Notification dispatch |
+| `src/lib/services/__tests__/userService.test.ts` | User service layer |
+| `src/lib/supabase/__tests__/board-repo.test.ts` | Board repository |
+| `src/lib/supabase/__tests__/notifications-repo.test.ts` | Notifications repository |
+
+**Supabase is always mocked.** No test touches a real database, so you do not
+need any environment variable, a running dev server, or network access to run
+`npm test`.
+
+### What is NOT covered — do not claim otherwise
+
+- **No component or browser tests.** There is no jsdom environment, no React
+  Testing Library, no Playwright or Cypress. React components, every page under
+  `src/app/**/page.tsx`, and the drag-and-drop board are untested by `npm test`.
+- **Only 6 of the 31 API route files have a test.** The other 25 — including all
+  of `/api/v1/*`, `/api/mcp`, `/api/cron/alert-check`, `/api/tasks/*` and the
+  public share routes — have none.
+- **No RLS or migration tests.** The 114 migrations in `supabase/migrations/` are
+  not exercised by the suite.
+- **No E2E and no CI gate** wired to these tests in this repo.
+- `testMatch` only picks up `*.test.ts` — a `*.test.tsx` file would be silently
+  ignored.
+
+---
+
+## Manual scripts under `testing/` and `scripts/`
+
+These are **not** part of `npm test`. They are hand-run tools that hit a deployed
+or local URL, and several of them are stale — check before trusting output.
+
+| File | Exists | Note |
+|---|---|---|
+| `testing/2-security-testing.sh` | yes | Its "Compliance Testing" section probes `/api/admin/delete-user`, `/api/admin/export-data` and `/api/admin/audit-logs`, **none of which exist**. Expect permanent `404`s there. |
+| `testing/run-load-tests.sh`, `testing/load-test.js`, `testing/1-load-testing.yaml` | yes | k6 scripts. **k6 is not installed as a project dependency**, and the auth model they assume is wrong — see [`LOAD_TEST_SETUP.md`](./LOAD_TEST_SETUP.md). |
+| `scripts/generate-test-users.js` | yes | Needs `SUPABASE_URL` + `SUPABASE_SERVICE_ROLE_KEY`. |
+| `scripts/generate-test-tokens.js` | yes | Needs `SUPABASE_URL` + `SUPABASE_ANON_KEY`. Produces Supabase JWTs, which the app's cookie-session routes do **not** accept as bearer tokens. |
+| `scripts/validate-environment.sh` | yes | Environment variable sanity check. |
+| `scripts/test-credentials.sh` | **no** | Referenced by older docs; never existed. Use `validate-environment.sh`. |
+
+The only endpoint safe and meaningful to hammer without auth is `GET /api/health`.
+
+---
+
+## Environment variables
+
+`npm test` needs **none**. The variables below are only for the manual scripts
+above:
+
+```
+SUPABASE_URL
+SUPABASE_ANON_KEY
+SUPABASE_SERVICE_ROLE_KEY
+BASE_URL          # e.g. http://localhost:3000, or https://task.conto.ec
+```
+
+> Set values in `.env.local` (git-ignored) or your shell — **never** write a key,
+> token or DSN into a file in `docs/`. The names above are all this document
+> should ever contain.
+>
+> **Migration note:** `BASE_URL` and the Supabase values belong to the current
+> account (project ref `txdyijyswpsalqnwfopc`, host `task.conto.ec`). If TaskFlow
+> moves accounts, see [`MIGRACION.md`](../MIGRACION.md).
+
+`SENTRY_ENABLED`, `SENTRY_ENVIRONMENT` and `SENTRY_TRACE_SAMPLE_RATE` appeared in
+earlier revisions of this page. **They are not read anywhere in this project.**
+Only `SENTRY_DSN` and `NEXT_PUBLIC_SENTRY_DSN` are — see
+[`SENTRY_SETUP.md`](./SENTRY_SETUP.md).
+
+---
+
+## Before a deploy
+
+```bash
+npm test          # must be 15/15 suites, 215/215 tests
+npx tsc --noEmit  # must be clean
+npm run lint
+npm run build
+```
+
+There is no `/api/test-sentry` route to curl, and there are no GDPR endpoints
+pending implementation — see
+[`SECURITY_ENDPOINTS_CHECKLIST.md`](./SECURITY_ENDPOINTS_CHECKLIST.md).
+
+---
+
+## Troubleshooting
+
+| Symptom | Cause |
+|---|---|
+| `Cannot find module '@/...'` | Run jest from the repo root; the `@/` alias comes from `moduleNameMapper` in `jest.config.ts`. |
+| A new test file never runs | It must be `src/**/__tests__/**/*.test.ts` — `.tsx` and files outside `src/` are not matched. |
+| `429` from a manual script | Rate limiting is real: 30 req/min per caller via Upstash, or 10 req/min in-memory when Upstash is unconfigured. Wait out the window. |
+| `401` from a manual script against `/api/admin/*` | Those routes use a Supabase **session cookie**, not `Authorization: Bearer`. A generated JWT will not work. |
+| `404` on `/api/events/trigger-notifications` or the GDPR endpoints | Those endpoints do not exist. Expected, not a regression. |
+
+---
+
+**Related:** [`TESTING.md`](./TESTING.md) (full guide) ·
+[`API_ENDPOINTS.md`](./API_ENDPOINTS.md) ·
+[`SECURITY_ENDPOINTS_CHECKLIST.md`](./SECURITY_ENDPOINTS_CHECKLIST.md) ·
+[`LOAD_TEST_SETUP.md`](./LOAD_TEST_SETUP.md) · [`MIGRACION.md`](../MIGRACION.md)
+
+**Last verified against the code:** 2026-09-10

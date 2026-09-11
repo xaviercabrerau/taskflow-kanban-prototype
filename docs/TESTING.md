@@ -1,232 +1,181 @@
 # Testing Guide
 
+> **Status: verified 2026-09-09** against the real test suite.
+> Current state: **15 suites / 215 tests, all passing** (`npx jest`).
+
 ## Overview
 
-User management tests cover JWT authentication, API route handlers, and database operations. Tests are written in Jest with TypeScript and use mocking for Supabase clients.
+The automated test suite is **Jest 29 + ts-jest**, running in the `node` test
+environment. It covers the notification pipeline, email templates, the task
+import parser, the Google integration helpers, the Supabase repository layer,
+and a subset of API route handlers. Supabase clients are always mocked — no
+test touches a real database.
+
+There is **no browser/component test runner** (no jsdom, no React Testing
+Library, no Playwright/Cypress in the automated suite), so React components,
+pages, and drag-and-drop behaviour are **not** covered by `npm test`. The
+shell scripts under `testing/` (load and security testing) are separate,
+manually-run tools — see `docs/LOAD_TEST_SETUP.md`.
 
 ## Running Tests
 
-### Run All Tests
+### Run all tests
 
 ```bash
 npm test
 ```
 
-Runs all tests once and exits.
+Runs all suites once and exits.
 
-### Watch Mode (Development)
-
-```bash
-npm test:watch
-```
-
-Re-runs tests when files change. Useful during development.
-
-### Coverage Report
+### Watch mode (development)
 
 ```bash
-npm test:coverage
+npm run test:watch
 ```
 
-Generates coverage report showing:
-- Statements covered
-- Branches covered
-- Functions covered
-- Lines covered
+Re-runs affected tests when files change.
 
-**Coverage Goal**: 80%+ for new code
+### Coverage report
+
+```bash
+npm run test:coverage
+```
+
+Coverage is collected from `src/**/*.ts` (excluding `*.d.ts` and `__tests__/`),
+per `collectCoverageFrom` in `jest.config.ts`.
+
+> Note: these are `npm run test:watch` / `npm run test:coverage`. Only `test`
+> itself is a built-in npm alias that works without `run`.
+
+### Type checking
+
+There is no dedicated npm script for type checking. Run the compiler directly:
+
+```bash
+npx tsc --noEmit
+```
+
+TypeScript errors do **not** fail `npm test`: `ts-jest` is configured without
+`diagnostics: false`, but it only type-checks the files a test actually
+imports. Run `npx tsc --noEmit` separately before considering a change done.
+
+---
+
+## Test Configuration
+
+`jest.config.ts`:
+
+| Setting | Value |
+|---|---|
+| `preset` | `ts-jest` |
+| `testEnvironment` | `node` |
+| `roots` | `<rootDir>/src` |
+| `testMatch` | `**/__tests__/**/*.test.ts` |
+| `moduleNameMapper` | `^@/(.*)$` → `<rootDir>/src/$1` |
+
+Consequences worth knowing:
+
+- Only files under `src/` are discovered. Tests placed elsewhere are ignored.
+- Only `.test.ts` inside a `__tests__/` directory is picked up. A `.test.tsx`
+  file would **not** run under the current `testMatch`.
 
 ---
 
 ## Test Structure
 
-### Location
+Tests live in `__tests__/` directories next to the code they cover.
+
 ```
-src/app/api/admin/
-├── users/
-│   └── __tests__/
-│       ├── route.test.ts      (GET /users, POST /users)
-│       └── [id].route.test.ts  (GET, PUT, DELETE /users/:id)
-└── /* other endpoints tested similarly */
-```
-
-### Test Files
-- `route.test.ts` — Tests for main route (GET list, POST create)
-- `[id].route.test.ts` — Tests for dynamic route (GET detail, PUT update, DELETE remove)
-- Service unit tests — Tests for helper functions and services
-
-### Test Organization
-
-Each test file follows this structure:
-
-```typescript
-import { describe, it, expect, beforeEach } from '@jest/globals';
-
-describe('API: /api/admin/users', () => {
-  let mockSupabase: any;
-
-  beforeEach(() => {
-    // Setup: Mock Supabase client
-    mockSupabase = {
-      auth: { getUser: jest.fn() },
-      from: jest.fn().mockReturnThis(),
-      select: jest.fn().mockReturnThis(),
-      eq: jest.fn().mockReturnThis(),
-      // ... other mocks
-    };
-  });
-
-  describe('GET /api/admin/users', () => {
-    it('should return 401 if user is not authenticated', async () => {
-      // Arrange
-      mockSupabase.auth.getUser.mockResolvedValue({
-        error: new Error('Not authenticated'),
-        data: { user: null }
-      });
-
-      // Act
-      const response = await GET(new Request('...'));
-
-      // Assert
-      expect(response.status).toBe(401);
-    });
-
-    it('should return 403 if user is not org member', async () => {
-      // Test implementation...
-    });
-
-    // More tests...
-  });
-
-  describe('POST /api/admin/users', () => {
-    // Tests for POST endpoint...
-  });
-});
+src/
+├── app/api/
+│   ├── admin/
+│   │   ├── import-tasks/__tests__/route.test.ts
+│   │   ├── notification-preferences/__tests__/route.test.ts
+│   │   └── users/__tests__/{route.test.ts, [id].route.test.ts}
+│   ├── internal/notify-event/__tests__/route.test.ts
+│   └── webhooks/gmail-reply/__tests__/route.test.ts
+└── lib/
+    ├── emails/__tests__/{templates.test.ts, utils.test.ts}
+    ├── google/__tests__/{oauth.test.ts, drive.test.ts}
+    ├── import/__tests__/task-row.test.ts
+    ├── notifications/__tests__/notify.test.ts
+    ├── services/__tests__/userService.test.ts
+    └── supabase/__tests__/{board-repo.test.ts, notifications-repo.test.ts}
 ```
 
 ---
 
-## Test Coverage
+## What Is Actually Covered
 
-### User Endpoints
+Verified 2026-09-09 by counting `it(...)`/`test(...)` blocks per suite.
 
-| Endpoint | Tests | Coverage |
-|----------|-------|----------|
-| GET /users | List all, auth, org member check, empty list | 4 |
-| POST /users | Create user, validation, auth, owner check | 4 |
-| GET /users/:id | Fetch user, auth, org check, not found | 3 |
-| PUT /users/:id | Update name, update role, auth, owner check | 4 |
-| DELETE /users/:id | Delete user, last admin protection, auth | 4 |
+### API route handlers
 
-### Additional Endpoints
+| Suite | Tests | What it covers |
+|---|---|---|
+| `admin/notification-preferences/__tests__/route.test.ts` | 20 | GET/PATCH preferences, 401/403 paths, validation |
+| `admin/users/__tests__/[id].route.test.ts` | 14 | GET/PUT/DELETE by id, owner checks, last-admin protection |
+| `admin/users/__tests__/route.test.ts` | 13 | GET list + POST create, auth, owner check, validation |
+| `admin/import-tasks/__tests__/route.test.ts` | 6 | Bulk import, CSV BOM/no-BOM regressions, row validation |
+| `internal/notify-event/__tests__/route.test.ts` | 6 | `INTERNAL_NOTIFY_SECRET` gate, payload validation |
+| `webhooks/gmail-reply/__tests__/route.test.ts` | 1 | Confirms the handler is still a disabled 501 stub |
 
-| Endpoint | Tests | Coverage |
-|----------|-------|----------|
-| POST /create-user | Direct creation, validation, auth, owner check | 5 |
-| POST /link-existing-user | Link account, auth, owner check, already linked | 5 |
-| POST /reset-password | Reset password, auth, owner check, validation | 4 |
+**Not covered by any route test** (24 of the 31 route files), including:
+`/api/v1/*` (public REST API), `/api/mcp`, `/api/cron/alert-check`,
+`/api/health`, `/api/health/cron`, `/api/public/share/*`, `/api/share-links*`,
+`/api/tasks/*`, `/api/integrations/google/*`, `/api/admin/create-user`,
+`/api/admin/link-existing-user`, `/api/admin/reset-password`,
+`/api/admin/import-tasks/template`, `/api/internal/sync-calendar-event`.
 
-**Total Test Count**: ~40+ tests covering core user management flows
+### Library code
 
----
+| Suite | Tests | What it covers |
+|---|---|---|
+| `lib/emails/__tests__/templates.test.ts` | 54 | Rendering of every notification email template |
+| `lib/emails/__tests__/utils.test.ts` | 36 | `sanitizeForEmail`, date formatting, helpers |
+| `lib/services/__tests__/userService.test.ts` | 22 | User service logic |
+| `lib/import/__tests__/task-row.test.ts` | 10 | `IMPORT_HEADERS`, row parsing/validation, BOM handling |
+| `lib/notifications/__tests__/notify.test.ts` | 10 | Event validation, dispatch, invalid-type handling |
+| `lib/google/__tests__/drive.test.ts` | 7 | Drive helper |
+| `lib/supabase/__tests__/board-repo.test.ts` | 6 | Board repository queries |
+| `lib/google/__tests__/oauth.test.ts` | 5 | OAuth state signing/verification, token exchange |
+| `lib/supabase/__tests__/notifications-repo.test.ts` | 5 | Notifications repository queries |
 
-## Key Test Scenarios
+**Total: 215 tests across 15 suites.**
 
-### Authentication Tests
-
-```typescript
-it('should return 401 if JWT is invalid', async () => {
-  mockSupabase.auth.getUser.mockResolvedValue({
-    error: new Error('Invalid token'),
-    data: { user: null }
-  });
-
-  const response = await GET(new Request('...'));
-  expect(response.status).toBe(401);
-  expect(response.body).toContain('Unauthorized');
-});
-```
-
-### Authorization Tests
-
-```typescript
-it('should return 403 if user is not organization owner', async () => {
-  mockSupabase.auth.getUser.mockResolvedValue({
-    data: { user: { id: 'user-uuid' } }
-  });
-  
-  // Mock membership with 'member' role
-  mockSupabase.from().select().eq().maybeSingle.mockResolvedValue({
-    data: { org_role: 'member' },
-    error: null
-  });
-
-  const response = await POST(new Request('...'));
-  expect(response.status).toBe(403);
-});
-```
-
-### Business Logic Tests
-
-```typescript
-it('should prevent deletion of last admin', async () => {
-  // Setup: Mock only 1 admin exists
-  mockSupabase.from().select().eq().in.mockResolvedValue({
-    data: [{ user_id: 'admin-uuid' }],
-    error: null
-  });
-
-  const response = await DELETE(new Request('...'), 
-    { params: { id: 'admin-uuid' } });
-  
-  expect(response.status).toBe(409);
-  expect(response.body).toContain('last admin');
-});
-```
-
-### Input Validation Tests
-
-```typescript
-it('should return 400 if email is missing', async () => {
-  const requestBody = JSON.stringify({ name: 'John Doe' });
-  
-  const response = await POST(
-    new Request('...', { body: requestBody })
-  );
-  
-  expect(response.status).toBe(400);
-  expect(response.body).toContain('Email is required');
-});
-```
+> No coverage percentage is quoted here on purpose. Run
+> `npm run test:coverage` for current numbers rather than trusting a figure
+> checked into a document.
 
 ---
 
 ## Mocking Strategy
 
-### Supabase Client Mock
+Tests mock the Supabase client rather than hitting a database.
 
-Tests mock the Supabase client to avoid database calls:
+### Server client (cookie-based, user session)
 
 ```typescript
 jest.mock('@/lib/supabase/server', () => ({
   createClient: jest.fn(() => ({
-    auth: {
-      getUser: jest.fn()
-    },
+    auth: { getUser: jest.fn() },
     from: jest.fn().mockReturnThis(),
     select: jest.fn().mockReturnThis(),
     eq: jest.fn().mockReturnThis(),
     maybeSingle: jest.fn(),
     insert: jest.fn().mockReturnThis(),
     update: jest.fn().mockReturnThis(),
-    delete: jest.fn().mockReturnThis()
-  }))
+    delete: jest.fn().mockReturnThis(),
+  })),
 }));
 ```
 
-### Service Role Mock
+### Service-role client
 
-For tests that need Supabase service role:
+Routes that need to bypass RLS (`create-user`, `link-existing-user`,
+`reset-password`, `users/[id]` PUT) construct their own client via
+`createClient` from `@supabase/supabase-js`, so that module is mocked
+separately:
 
 ```typescript
 jest.mock('@supabase/supabase-js', () => ({
@@ -236,154 +185,103 @@ jest.mock('@supabase/supabase-js', () => ({
         createUser: jest.fn(),
         updateUserById: jest.fn(),
         getUserById: jest.fn(),
-        listUsers: jest.fn()
-      }
+        listUsers: jest.fn(),
+      },
     },
-    from: jest.fn().mockReturnThis()
-  }))
+    from: jest.fn().mockReturnThis(),
+  })),
 }));
 ```
+
+> Why both: see the RLS notes below — a normal client silently updates 0 rows
+> when a policy blocks it, so tests must model which client a route uses.
+
+---
+
+## Domain Rules Tests Must Respect
+
+These are non-obvious project invariants. A test that contradicts them is
+testing the wrong thing:
+
+- **`org_role` and RBAC are separate systems.** `organization_members.org_role`
+  (`owner`/`admin`/`member`/`guest`) does not by itself grant granular
+  permissions like `task.create`. Real permissions come from `role_assignments`
+  (one row per board, `role_id` → `roles`), and RLS policies check
+  `role_assignments`, not `org_role`, for content mutations.
+- **`profiles` RLS:** `profiles_update_own` restricts UPDATE to
+  `id = auth.uid()`. An owner editing *another* user's name must use a
+  service-role client; with the normal client the update affects 0 rows and
+  throws no error.
+- **`organization_members` RLS:** `org_members_update` *does* let an owner
+  change another member's `org_role` with the normal client.
+- **`organization_members` has `UNIQUE(organization_id, user_id)`** — a user can
+  belong to several organizations, so membership queries must filter by
+  organization, not by user alone.
 
 ---
 
 ## Running Specific Tests
 
-### Test a Single File
-
 ```bash
+# A single file
 npm test -- src/app/api/admin/users/__tests__/route.test.ts
-```
 
-### Test with Pattern Matching
-
-```bash
-# Run only authentication-related tests
+# By test name pattern
 npm test -- --testNamePattern="auth"
 
-# Run only POST endpoint tests
-npm test -- --testNamePattern="POST"
-```
+# Verbose output
+npm test -- --verbose
 
-### Debug a Test
-
-```bash
-# Run in debug mode with Node inspector
+# Debug with the Node inspector
 node --inspect-brk node_modules/.bin/jest --runInBand
 ```
 
 ---
 
-## Debugging Failed Tests
+## Common Issues
 
-### Check Test Output
-
-```bash
-npm test -- --verbose
-```
-
-Shows detailed output for each test.
-
-### Enable Jest Debugging
-
-Add to jest.config.ts:
-
-```typescript
-{
-  verbose: true,
-  testTimeout: 10000  // Increase timeout for slow tests
-}
-```
-
-### Common Issues
-
-| Error | Solution |
-|-------|----------|
-| `Cannot find module '@/...'` | Verify moduleNameMapper in jest.config.ts |
-| `Timeout exceeded` | Increase testTimeout or fix async issue |
-| `Unexpected mock/unmock` | Clear mocks between tests with jest.clearAllMocks() |
-| `Type errors in mock` | Use jest-mock-extended or proper typing |
-
----
-
-## Coverage Analysis
-
-### View Coverage Report
-
-```bash
-npm run test:coverage
-```
-
-Output example:
-
-```
------------|----------|----------|----------|----------|
-File       | % Stmts  | % Branch | % Funcs  | % Lines  |
------------|----------|----------|----------|----------|
-All files  |    82.5  |    78.2  |    85.1  |    82.1  |
- admin/    |    85.0  |    80.0  |    87.0  |    84.5  |
------------|----------|----------|----------|----------|
-```
-
-### Improve Coverage
-
-1. **Find untested files**: Look for low coverage files in report
-2. **Add missing scenarios**: Tests for error paths, edge cases
-3. **Update after refactoring**: Ensure tests still cover all paths
-
-### Coverage Targets
-
-| Metric | Target | Current |
-|--------|--------|---------|
-| Statements | 80% | ~82% |
-| Branches | 75% | ~78% |
-| Functions | 80% | ~85% |
-| Lines | 80% | ~82% |
+| Error | Cause / fix |
+|---|---|
+| `Cannot find module '@/...'` | Check `moduleNameMapper` in `jest.config.ts` |
+| Test file never runs | It must be `src/**/__tests__/**/*.test.ts` — `.tsx` and files outside `src/` are not matched |
+| `Timeout exceeded` | Add `testTimeout` in `jest.config.ts` or fix an unresolved promise |
+| Update "succeeds" but changes nothing | An RLS policy blocked it — the route probably needs the service-role client (see above) |
+| `Unexpected mock/unmock` | Call `jest.clearAllMocks()` in `beforeEach` |
 
 ---
 
 ## Continuous Integration
 
-### CI Pipeline (GitHub Actions)
+**There is currently no CI pipeline in this repository** — no
+`.github/workflows/`, and no pre-commit hooks (no `.husky/`). Tests are run
+manually before deploying.
+
+If CI is added later, the minimum useful job is:
 
 ```yaml
-- name: Run Tests
-  run: npm test -- --coverage
-
-- name: Upload Coverage
-  uses: codecov/codecov-action@v3
-```
-
-Tests run automatically on:
-- Pull requests
-- Push to main branch
-- Scheduled daily runs
-
-### Pre-commit Hook
-
-Optional: Run tests before commit
-
-```bash
-# .husky/pre-commit
-npm test -- --bail
+- run: npm ci
+- run: npm test
+- run: npx tsc --noEmit
+- run: npm run lint
 ```
 
 ---
 
 ## Best Practices
 
-1. **Test behavior, not implementation**: Focus on what the API does, not how
-2. **Use descriptive names**: Test name should explain the scenario
-3. **Keep tests isolated**: Mock all external dependencies
-4. **Test error cases**: Don't just test the happy path
-5. **Update tests with code**: Change tests when business logic changes
-6. **Use factories/fixtures**: Reduce test boilerplate
-7. **Avoid test interdependence**: Each test should be independent
+1. Test behaviour, not implementation.
+2. Use descriptive test names that state the scenario.
+3. Mock every external dependency; keep tests isolated.
+4. Cover error paths, not just the happy path.
+5. Update tests when business logic changes.
+6. Keep tests independent of execution order.
+7. When adding a route, add a route test — 24 of 31 routes currently have none.
 
 ---
 
-## Support
+## Related Documents
 
-For questions about testing:
-- Review test files in `__tests__` directories
-- Check Jest documentation: https://jestjs.io/
-- Check Supabase TypeScript examples: https://supabase.com/docs
+- `docs/TESTING_QUICK_REFERENCE.md` — load/security testing quick reference
+- `docs/LOAD_TEST_SETUP.md` — load testing setup
+- `docs/SECURITY_ENDPOINTS_CHECKLIST.md` — per-endpoint auth/authorization audit
+- `docs/API_ENDPOINTS.md` — API reference

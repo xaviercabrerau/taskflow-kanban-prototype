@@ -1,511 +1,186 @@
-# Credentials & Environment Variables Setup Guide
+# TaskFlow — Credential Handling, Rotation and Revocation
 
-**Status:** Configuration Guide v1.0  
-**Last Updated:** 2026-08-18  
-**Maintainer:** DevOps & Security Team
+> **What this document covers:** the *policy* for TaskFlow's secrets — where
+> they are stored, who can see them, how they are rotated, and what to do when
+> one leaks.
+> **Where to go for anything else:**
+> • Where each variable's value is obtained → [`ENV_SETUP_INSTRUCTIONS.md`](./ENV_SETUP_INSTRUCTIONS.md)
+> • Canonical variable list → [`.env.example`](./.env.example)
+> • Pre-deploy configuration checklist → [`CONFIG_CHECKLIST.md`](./CONFIG_CHECKLIST.md)
+> • Deploying → [`DEPLOYMENT_GUIDE.md`](./DEPLOYMENT_GUIDE.md)
+> • Regenerating every credential in new accounts → [`MIGRACION.md`](./MIGRACION.md)
 
----
+**Last verified:** 2026-09-09.
 
-## Overview
-
-This guide documents all environment variables required to run the TaskFlow Notification System, including setup instructions for each credential, secure storage practices, and compliance requirements.
-
----
-
-## SECTION 1: Quick Start
-
-### For Development
-
-1. Copy `.env.example` to `.env.local`
-2. Fill in test/sandbox credentials for each service
-3. Don't commit `.env.local` to git (already in `.gitignore`)
-
-### For Production
-
-1. Use a secrets management system (Vercel Secrets, AWS Secrets Manager, HashiCorp Vault)
-2. Never hardcode credentials in code or config files
-3. Rotate credentials every 90 days
-4. Use strong, randomly generated passwords/keys
+**This document contains no secret values, and must never contain any** — only
+variable names, storage locations and procedures.
 
 ---
 
-## SECTION 2: Email Recipients Configuration (Blocker 9 Fix)
+## 1. Where secrets live
 
-### 2.1 Alert Email Recipients
+| Environment | Storage | Notes |
+|---|---|---|
+| Local development | `.env.local` | Git-ignored (`.gitignore` excludes every `.env*` except `.env.example`). Never commit it. |
+| Vercel Production / Preview / Development | *Vercel → Settings → Environment Variables* | The only source of truth for deployed secrets. |
+| Local helper scripts (`scripts/`) | `.env.local` | They read the non-prefixed `SUPABASE_URL` / `SUPABASE_ANON_KEY`. |
 
-**Variable:** `ALERTS_EMAIL_RECIPIENTS`  
-**Type:** Comma-separated email list  
-**Default:** `ops-team@company.com,engineering-lead@company.com`
+There is no external secret manager (Vault, AWS Secrets Manager, Doppler) in
+use, and none is needed at the project's current size. Vercel's encrypted
+environment variables are the store of record.
 
-**Purpose:** Receives monitoring alerts for critical issues
-
-**Setup:**
-```bash
-# For Vercel
-vercel env add ALERTS_EMAIL_RECIPIENTS "ops-team@your-company.com,engineering-lead@your-company.com"
-
-# For local development
-ALERTS_EMAIL_RECIPIENTS=dev-team@localhost.test
-```
-
-**Testing:**
-```bash
-# Verify format is comma-separated
-curl -X POST http://localhost:3000/api/test/send-alert \
-  -H "Content-Type: application/json" \
-  -d '{"to": "'$ALERTS_EMAIL_RECIPIENTS'"}'
-```
-
-### 2.2 Alert From Address
-
-**Variable:** `ALERTS_FROM_ADDRESS`  
-**Type:** Email address  
-**Default:** `alerts@company.com`
-
-**Purpose:** Sender email for all alert notifications
-
-**Setup:**
-```bash
-vercel env add ALERTS_FROM_ADDRESS "alerts@your-company.com"
-```
-
-**Verification:** Must be a valid, verified email address in your email provider
-
-### 2.3 Error Digest Recipients
-
-**Variable:** `ERROR_DIGEST_EMAIL_RECIPIENTS`  
-**Type:** Comma-separated email list  
-**Default:** `engineering-lead@company.com`
-
-**Purpose:** Receives daily/weekly error summaries
-
-**Setup:**
-```bash
-vercel env add ERROR_DIGEST_EMAIL_RECIPIENTS "engineering-lead@your-company.com"
-```
-
-### 2.4 On-Call Engineer Email
-
-**Variable:** `ON_CALL_EMAIL`  
-**Type:** Email address  
-**Default:** `oncall@company.com`
-
-**Purpose:** Receives urgent P1 alerts during on-call shifts
-
-**Setup:**
-```bash
-# This should be dynamically updated based on on-call rotation
-# See Section 3 for PagerDuty integration
-
-vercel env add ON_CALL_EMAIL "alice@company.com"  # Rotate weekly
-```
-
-**Automation:** Use PagerDuty API to auto-update this during schedule rotations
-
-### 2.5 Engineering Manager Email
-
-**Variable:** `ENGINEERING_LEAD_EMAIL`  
-**Type:** Email address  
-**Default:** `engineering-lead@company.com`
-
-**Purpose:** Escalation contact for critical issues
-
-**Setup:**
-```bash
-vercel env add ENGINEERING_LEAD_EMAIL "engineering-lead@your-company.com"
-```
-
-### 2.6 Infrastructure Team Email
-
-**Variable:** `INFRASTRUCTURE_TEAM_EMAIL`  
-**Type:** Email address  
-**Default:** `infrastructure@company.com`
-
-**Purpose:** Receives infrastructure-specific alerts
-
-**Setup:**
-```bash
-vercel env add INFRASTRUCTURE_TEAM_EMAIL "infrastructure@your-company.com"
-```
+`vercel env pull` **overwrites `.env.local`** — back it up first if it holds
+values that are not in Vercel.
 
 ---
 
-## SECTION 3: Security Best Practices for Credentials
+## 2. Secret inventory and blast radius
 
-### 3.1 Secure Storage
+Ordered by how much damage exposure would cause.
 
-**Development:**
-- Use `.env.local` (never commit)
-- Use test/sandbox API keys only
-- Rotate credentials before each production push
+| Secret | If exposed | Rotate at |
+|---|---|---|
+| `SUPABASE_SERVICE_ROLE_KEY` | **Total compromise.** Bypasses every RLS policy: full read/write on all tenants' data. | Supabase → Project Settings → API |
+| Supabase database password | Direct Postgres access. | Supabase → Project Settings → Database |
+| `JWT_SECRET` | Forged public-API v1 tokens and forged Google OAuth `state`. | Self-generated (`openssl rand -base64 32`) |
+| `RESEND_API_KEY` | Sending email as your verified domain (phishing). | Resend → API Keys |
+| `INTERNAL_NOTIFY_SECRET` | Ability to trigger internal notification/calendar endpoints. | Self-generated |
+| `CRON_SECRET` | Ability to trigger `/api/cron/alert-check` at will. | Self-generated |
+| `UPSTASH_REDIS_REST_TOKEN` / `KV_REST_API_TOKEN` | Read/write on the rate-limit and cache store. | Upstash → database |
+| `GOOGLE_CLIENT_SECRET` | Impersonating the OAuth client. | Google Cloud → Credentials |
+| `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` | Event spam into the Sentry project only. | Sentry → Client Keys |
+| `ALERT_WEBHOOK_URL` | Posting messages into the alert channel. | Slack/Discord → recreate the webhook |
 
-**Production (Vercel):**
-- Use Vercel Dashboard → Settings → Environment Variables
-- Set separate values for Production, Preview, Development
-- Enable "Encrypted" flag for sensitive values
-- Require production deployments to use secrets
-
-**Production (Self-Hosted):**
-- Use HashiCorp Vault or AWS Secrets Manager
-- Encrypt secrets at rest and in transit
-- Audit all access to secrets
-- Rotate automatically every 90 days
-
-### 3.2 Credential Rotation
-
-**Email Recipients:** Every quarter
-- Update ops team contact list
-- Update engineering manager email
-- Sync with HR/org changes
-
-**API Keys/Tokens:** Every 90 days
-- Generate new Gmail API tokens
-- Rotate PagerDuty integration keys
-- Refresh Slack tokens
-- Update AWS/Google Cloud credentials
-
-**Process:**
-```bash
-# Create new credential
-# Update environment variable
-# Test new credential works
-# Verify old credential is revoked
-# Remove old credential from system
-
-# Example for Vercel
-vercel env add GMAIL_REFRESH_TOKEN "new-token-here"
-# Wait for deployment
-# Verify Gmail sends work
-# Revoke old token
-# Remove old value
-vercel env rm GMAIL_REFRESH_TOKEN  # Re-adds new one
-```
-
-### 3.3 Credential Audit Trail
-
-Keep a secure log of all credential changes:
-
-```markdown
-# Credentials Audit Log
-
-## 2026-08-18
-- ALERTS_EMAIL_RECIPIENTS: Updated for Q3 team restructuring
-  - Old: ops-team@old-domain.com
-  - New: ops-team@company.com
-  - Changed by: security-team
-  - Approved by: engineering-lead
-
-## 2026-08-15
-- GMAIL_REFRESH_TOKEN: Quarterly rotation
-  - Old token revoked
-  - New token deployed
-  - Changed by: devops-automation
-  - Verified: Production email working
-```
+Public by design, **not** secrets: `NEXT_PUBLIC_SUPABASE_URL`,
+`NEXT_PUBLIC_SUPABASE_ANON_KEY` (constrained by RLS),
+`NEXT_PUBLIC_APP_URL`, `NEXT_PUBLIC_GOOGLE_CLIENT_ID`,
+`NEXT_PUBLIC_GOOGLE_PICKER_API_KEY` (protect it with an HTTP-referrer
+restriction in Google Cloud instead), `NEXT_PUBLIC_SENTRY_DSN`.
 
 ---
 
-## SECTION 4: Monitoring Credentials Usage
+## 3. Rotation
 
-### 4.1 Log Credential Access
+There is no automated rotation. Rotate:
 
-**DO:**
-- Log when credentials are read (in production)
-- Alert if credentials accessed outside normal patterns
-- Audit all secrets management system access
+- **On any suspicion of exposure** — immediately, per section 4.
+- **When someone with access leaves** the project.
+- **On account migration** — see [`MIGRACION.md`](./MIGRACION.md), which
+  regenerates everything in the destination accounts by construction.
+- Otherwise, on a periodic review you can actually sustain. Pick a real
+  interval and keep it; a policy nobody follows is worse than an honest
+  "rotated on exposure and on personnel change".
 
-**DON'T:**
-- Log credential values anywhere
-- Print credentials to logs
-- Store credentials in Git history
+### Procedure (rotate without downtime)
 
-### 4.2 Detect Credential Leaks
+1. Create the new credential in the provider's console — **do not revoke the
+   old one yet.**
+2. Update the value in *Vercel → Settings → Environment Variables* for each
+   environment that needs it.
+3. Redeploy (environment variables are read at build/run time, so a running
+   deployment keeps the old value):
+   ```bash
+   vercel deploy --prod
+   ```
+4. Verify the new credential works:
+   ```bash
+   curl -s https://task.conto.ec/api/health      # Supabase connectivity
+   ```
+   plus a functional check specific to the secret (send a notification email
+   for Resend, hit a rate-limited route for Upstash, connect the integration
+   for Google).
+5. **Now** revoke the old credential in the provider's console.
+6. Update your own `.env.local` and tell anyone else running the project
+   locally.
 
-```bash
-#!/bin/bash
-# scripts/detect-credential-leaks.sh
+### Two rotations with special consequences
 
-echo "Scanning for exposed credentials..."
-
-# Check for common patterns
-git log --all -S "ALERTS_EMAIL_RECIPIENTS" -- . | head -5
-git log --all -S "api_key" -- . | head -5
-git log --all -S "secret" -- . | head -5
-
-# Check recent commits
-git diff HEAD~10 HEAD | grep -i "password\|token\|secret\|key" || echo "✓ No obvious leaks"
-
-# Use external tools
-# npm audit
-# snyk test
-```
-
-### 4.3 Revocation Procedures
-
-If a credential is accidentally exposed:
-
-1. **Immediate (< 5 minutes)**
-   - Revoke credential in source system (Gmail, PagerDuty, etc.)
-   - Remove from environment variables
-   - Notify security team
-
-2. **Short-term (< 1 hour)**
-   - Rotate all related credentials
-   - Analyze access logs to see if compromised
-   - Check for unauthorized usage
-
-3. **Medium-term (< 24 hours)**
-   - Update documentation
-   - Notify affected services
-   - Add to incident report
-
-4. **Long-term (ongoing)**
-   - Implement better secret scanning
-   - Add pre-commit hooks to prevent similar leaks
-   - Train team on credential handling
+- **`JWT_SECRET`:** rotating it invalidates **every API key users have already
+  issued** (`/admin/api-keys`, and the MCP integration used by Claude
+  Desktop / Claude Code). They must all be reissued. Only rotate it on a real
+  exposure, and warn users first.
+- **`SUPABASE_SERVICE_ROLE_KEY`:** rotating it in Supabase invalidates the old
+  key instantly, so update Vercel and redeploy in the same window — flows that
+  need it (notifications, admin edits to other users' profiles, Google/GitHub/AI
+  clients) fail until then.
 
 ---
 
-## SECTION 5: Email Configuration Validation
+## 4. If a credential leaks
 
-### 5.1 Validation Script
+**Within minutes**
 
-```typescript
-// scripts/validate-email-config.ts
-import nodemailer from "nodemailer";
+1. Revoke or rotate it in the provider's console — revoke first, ask questions
+   later. An outage is cheaper than an open door.
+2. Set the replacement in Vercel and redeploy.
+3. If the leak was a git commit: rotating is mandatory and sufficient. Rewriting
+   history does **not** un-leak anything already pushed — treat the value as
+   permanently burned.
 
-async function validateEmailConfig() {
-  const config = {
-    recipients: process.env.ALERTS_EMAIL_RECIPIENTS?.split(",") || [],
-    fromAddress: process.env.ALERTS_FROM_ADDRESS,
-    digestRecipients: process.env.ERROR_DIGEST_EMAIL_RECIPIENTS?.split(",") || [],
-  };
+**Within hours**
 
-  console.log("📧 Email Configuration Validation");
-  console.log("==================================\n");
+4. Check the provider's logs for use you cannot account for: Supabase
+   (*Logs → API / Postgres*), Resend (*Logs*), Upstash (*Usage*), Google Cloud
+   (*Audit logs*).
+5. Rotate anything that shared the exposure path (same file, same message, same
+   screenshot).
+6. If the service role key or the database password was involved, assume tenant
+   data was readable and check `/admin/auditoria` and the Supabase logs for
+   unexpected access.
 
-  // Validate recipients list
-  console.log("✓ Alert Recipients:");
-  config.recipients.forEach((email) => {
-    validateEmail(email);
-  });
+**Afterwards**
 
-  console.log("\n✓ From Address:");
-  validateEmail(config.fromAddress);
-
-  console.log("\n✓ Digest Recipients:");
-  config.digestRecipients.forEach((email) => {
-    validateEmail(email);
-  });
-
-  // Test SMTP connection
-  console.log("\n🔗 Testing SMTP Connection...");
-  try {
-    const transporter = nodemailer.createTransport({
-      host: process.env.SMTP_HOST,
-      port: parseInt(process.env.SMTP_PORT || "587"),
-      secure: process.env.SMTP_SECURE === "true",
-      auth: {
-        user: process.env.SMTP_USER,
-        pass: process.env.SMTP_PASSWORD,
-      },
-    });
-
-    await transporter.verify();
-    console.log("✓ SMTP connection successful");
-  } catch (error) {
-    console.error("✗ SMTP connection failed:", error.message);
-  }
-
-  // Check for duplicates
-  const allEmails = [
-    ...config.recipients,
-    ...config.digestRecipients,
-  ];
-  const duplicates = allEmails.filter(
-    (email, index) => allEmails.indexOf(email) !== index
-  );
-
-  if (duplicates.length > 0) {
-    console.warn("⚠ Duplicate recipients found:", duplicates);
-  }
-}
-
-function validateEmail(email: string): boolean {
-  const emailRegex = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
-  if (!emailRegex.test(email)) {
-    console.error(`✗ Invalid email format: ${email}`);
-    return false;
-  }
-  console.log(`  - ${email} ✓`);
-  return true;
-}
-
-validateEmailConfig();
-```
-
-**Run validation:**
-```bash
-npx ts-node scripts/validate-email-config.ts
-```
+7. Record what leaked, how, when it was rotated, and what the logs showed. Keep
+   that record outside this repository.
 
 ---
 
-## SECTION 6: Production Deployment Checklist
+## 5. Rules
 
-Before deploying to production:
+**Do**
 
-- [ ] All email recipients configured and tested
-- [ ] Sender email address verified in email provider
-- [ ] SMTP credentials set correctly
-- [ ] Error digest emails configured
-- [ ] On-call rotation configured
-- [ ] All API keys rotated in last 90 days
-- [ ] No credentials in code or git history
-- [ ] Environment variables match .env.example
-- [ ] Secrets marked as "Encrypted" in Vercel
-- [ ] Credential audit log updated
-- [ ] Team trained on credential handling
-- [ ] Incident response plan updated
-- [ ] Monitoring alerts configured
-- [ ] Slack/PagerDuty integrations tested
+- Keep every secret in Vercel's environment variables or in `.env.local`.
+- Share secrets through a password manager or another end-to-end encrypted
+  channel — never chat, email, a ticket, or a commit.
+- Give each environment its own values where the provider allows it.
+- Use referrer/domain restrictions for keys that must be public
+  (`NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`).
+- Scan before committing:
+  ```bash
+  git diff --cached | grep -iE 'eyJ[A-Za-z0-9_-]{10,}|re_[A-Za-z0-9]{10,}|sk_[A-Za-z0-9]{10,}|-----BEGIN'
+  ```
 
----
+**Do not**
 
-## SECTION 7: Environment Variables Reference
-
-### All Email-Related Variables
-
-```bash
-# Alert Recipients
-ALERTS_EMAIL_RECIPIENTS=ops-team@company.com,engineering-lead@company.com
-ALERTS_FROM_ADDRESS=alerts@company.com
-
-# Digest Recipients
-ERROR_DIGEST_EMAIL_RECIPIENTS=engineering-lead@company.com
-
-# Individual Contacts
-ON_CALL_EMAIL=oncall@company.com
-ENGINEERING_LEAD_EMAIL=engineering-lead@company.com
-INFRASTRUCTURE_TEAM_EMAIL=infrastructure@company.com
-
-# SMTP Configuration (if self-hosting email)
-SMTP_HOST=smtp.gmail.com
-SMTP_PORT=587
-SMTP_SECURE=false
-SMTP_USER=notifications@company.com
-SMTP_PASSWORD=your-app-specific-password
-```
-
-### Vercel Deployment
-
-```bash
-# Production environment
-vercel env add ALERTS_EMAIL_RECIPIENTS "ops@prod.example.com" --environment production
-
-# Preview deployments (e.g., for testing)
-vercel env add ALERTS_EMAIL_RECIPIENTS "dev@example.com" --environment preview
-
-# Development environment
-vercel env add ALERTS_EMAIL_RECIPIENTS "dev@example.com" --environment development
-```
+- Commit `.env.local`, `.env.production`, or any `*.key` / `*.json` service
+  credential.
+- Paste real values into documentation, including this file.
+- Log credential values, or echo them in CI output.
+- Ship `SUPABASE_SERVICE_ROLE_KEY` or `GOOGLE_CLIENT_SECRET` to the browser —
+  the `NEXT_PUBLIC_` prefix is what makes a variable client-visible, so never
+  add it to a secret.
 
 ---
 
-## SECTION 8: Troubleshooting
+## 6. Related
 
-### Email Not Sending
+- [`.env.example`](./.env.example) — canonical, commented variable list.
+- [`ENV_SETUP_INSTRUCTIONS.md`](./ENV_SETUP_INSTRUCTIONS.md) — where each value
+  comes from.
+- [`docs/PII_SCRUBBING.md`](./docs/PII_SCRUBBING.md) — what is stripped before
+  errors leave the app.
+- [`docs/AUDIT_LOGGING.md`](./docs/AUDIT_LOGGING.md) — audit trail of user and
+  admin actions (surfaced at `/admin/auditoria`).
+- [`AUDITORIA_2026-09-03.md`](./AUDITORIA_2026-09-03.md) — most recent security
+  and quality audit.
+- [`MIGRACION.md`](./MIGRACION.md) — regenerating every credential in new
+  accounts.
 
-**Check 1: Credentials**
-```bash
-# Verify env var is set
-echo $ALERTS_EMAIL_RECIPIENTS
-
-# Check SMTP credentials
-vercel env ls | grep SMTP
-```
-
-**Check 2: Email Provider Verification**
-- Gmail: Sender email must be verified in Gmail App Passwords
-- SendGrid: API key must have Mail Send permission
-- AWS SES: Sender email must be verified in SES console
-
-**Check 3: Email Format**
-```bash
-# Validate email format
-echo "ops@company.com" | grep -E '^[a-zA-Z0-9._%+-]+@[a-zA-Z0-9.-]+\.[a-zA-Z]{2,}$'
-```
-
-**Check 4: Rate Limiting**
-- Check if email provider is rate-limiting
-- Check logs for bounced emails
-- Verify list doesn't contain invalid addresses
-
-### Configuration Mismatch
-
-**Symptom:** Alerts sent to wrong email address
-
-**Debug:**
-```typescript
-// pages/api/debug/email-config.ts
-export default function handler(req: NextApiRequest, res: NextApiResponse) {
-  // Only available in development
-  if (process.env.NODE_ENV !== "development") {
-    return res.status(403).json({ error: "Forbidden" });
-  }
-
-  res.json({
-    alertsTo: process.env.ALERTS_EMAIL_RECIPIENTS,
-    alertsFrom: process.env.ALERTS_FROM_ADDRESS,
-    digestTo: process.env.ERROR_DIGEST_EMAIL_RECIPIENTS,
-    onCallEmail: process.env.ON_CALL_EMAIL,
-    engineeringLead: process.env.ENGINEERING_LEAD_EMAIL,
-  });
-}
-```
-
----
-
-## SECTION 9: Compliance & Audit
-
-### GDPR Compliance
-
-Email recipients must:
-- Be consented for receiving notifications
-- Have opt-out mechanism available
-- Be stored securely (encrypted in transit and at rest)
-- Be retained only as long as needed
-- Be accessible via Subject Access Request
-
-### SOC 2 Compliance
-
-Email credential handling must:
-- Be logged and audited
-- Be rotated every 90 days
-- Have access controls
-- Have encryption in transit/at rest
-- Have incident response plan
-
-### Recommended Tools
-
-- **HashiCorp Vault:** Centralized secret management
-- **1Password Teams:** Team credential sharing
-- **Doppler:** Environment variable management
-- **AWS Secrets Manager:** AWS-native secrets
-- **GitGuardian:** Secret scanning for Git
-
----
-
-## SECTION 10: Related Documentation
-
-- [Environment Variables (.env.example)](/Users/xaviercabrera/Claude/taskflow-kanban-prototype/.env.example)
-- [PII Scrubbing Guide](/Users/xaviercabrera/Claude/taskflow-kanban-prototype/docs/PII_SCRUBBING.md)
-- [Audit Logging & GDPR](/Users/xaviercabrera/Claude/taskflow-kanban-prototype/docs/AUDIT_LOGGING.md)
-- [Monitoring & Alerts](/Users/xaviercabrera/Claude/taskflow-kanban-prototype/ops/1-monitoring-alerts.yaml)
-- [Error Tracking Config](/Users/xaviercabrera/Claude/taskflow-kanban-prototype/ops/7-error-tracking-config.md)
-
----
-
-**Last Updated:** 2026-08-18  
-**Version:** 1.0  
-**Status:** Complete
+> **Historical note:** revisions of this document before 2026-09-09 described
+> `ALERTS_EMAIL_RECIPIENTS`, `ALERTS_FROM_ADDRESS`,
+> `ERROR_DIGEST_EMAIL_RECIPIENTS`, `ON_CALL_EMAIL`, `ENGINEERING_LEAD_EMAIL`,
+> `INFRASTRUCTURE_TEAM_EMAIL`, `SMTP_*`, PagerDuty and Twilio credentials, and
+> an SMTP/nodemailer validation script. None of those variables are read
+> anywhere in the codebase and nodemailer is not a dependency: they came from a
+> generic observability boilerplate. Alerting today is a single webhook
+> (`ALERT_WEBHOOK_URL`) and email goes through Resend.

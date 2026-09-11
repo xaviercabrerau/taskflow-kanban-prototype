@@ -2,6 +2,14 @@
 
 Comprehensive security testing toolkit for validating the TaskFlow notification pipeline, email delivery, and data handling security posture.
 
+> **Status: verified 2026-09-10** against `testing/2-security-testing.sh`. This
+> document previously described flags, environment variables, and endpoints
+> (`/api/notifications/*`, `/api/gdpr/*`, `/api/audit-logs`) that do not exist
+> in this project or in the script. Corrections are inline below; the real
+> flags are `--suite NAME`, `--format text|json`, `--base-url`, `--verbose`,
+> `--debug`, `--html` (parsed but does not generate an HTML report), and
+> `--help`. There is no `--section N` flag and no `--fast`/"fast mode".
+
 ## Overview
 
 This security testing framework covers 10 critical domains:
@@ -13,7 +21,7 @@ This security testing framework covers 10 critical domains:
 5. **Data Exposure** - Error messages, PII, sensitive headers, log leakage
 6. **API Security** - CORS, CSRF, request sizes, timeouts
 7. **Email Security** - Header injection, XSS in templates, spoofing, attachments
-8. **External Services** - Gmail API failures, Redis issues, Supabase downtime, cascading failures
+8. **External Services** - Gmail-reply webhook behavior, Upstash Redis (rate limiting/cache) issues, Supabase downtime, cascading failures
 9. **Secret Management** - Secrets in logs, errors, environment variables
 10. **Compliance** - Data retention, deletion, audit logging, GDPR compliance
 
@@ -25,14 +33,20 @@ This security testing framework covers 10 critical domains:
 # Required tools
 - bash 4.0+
 - curl
-- Python 3 (optional, for payload generation)
+- jq (optional, only used if you post-process the JSON report yourself)
 
-# Environment variables
-API_URL=http://localhost:3000  # API base URL (default: localhost:3000)
-VERBOSE=0                       # Show detailed output (0/1)
-JSON_OUTPUT=0                   # JSON results for CI/CD (0/1)
-FAST_MODE=0                     # Skip external service tests (0/1)
+# Environment variables the script actually reads
+BASE_URL=http://localhost:3000  # API base URL (default: localhost:3000)
+VERBOSE=false                    # Show detailed output (true/false)
+DEBUG=false                      # Show curl requests/responses (true/false)
+OUTPUT_FORMAT=text               # text or json
+TEST_SUITE=all                   # Which suite to run
+TIMEOUT=10                       # Request timeout, seconds
+RESULTS_DIR=./test-results        # Where reports are written
 ```
+
+There is no `API_URL`, `JSON_OUTPUT`, or `FAST_MODE` variable — those were
+documented here previously but the script does not read them.
 
 ### Basic Usage
 
@@ -40,28 +54,22 @@ FAST_MODE=0                     # Skip external service tests (0/1)
 # Run all tests
 ./2-security-testing.sh
 
-# Run with colored output (default)
-./2-security-testing.sh
-
 # Run in CI/CD with JSON output
-./2-security-testing.sh --json
+./2-security-testing.sh --format json
 
-# Run only specific section
-./2-security-testing.sh --section 1
-
-# Fast mode (skip Gmail, Redis, Supabase tests)
-./2-security-testing.sh --fast
+# Run only one suite
+./2-security-testing.sh --suite input
 
 # Verbose output for debugging
 ./2-security-testing.sh --verbose
 
 # Combined options
-./2-security-testing.sh --json --fast --verbose
+./2-security-testing.sh --format json --verbose --suite auth
 ```
 
 ## Test Sections
 
-### Section 1: Input Validation (4 tests)
+### Section 1: Input Validation — `--suite input`
 
 Tests protection against injection attacks:
 
@@ -76,7 +84,7 @@ Tests protection against injection attacks:
 - Avoid shell/exec functions with user-supplied data
 - Validate and normalize file paths
 
-### Section 2: Authentication (5 tests)
+### Section 2: Authentication — `--suite auth`
 
 Tests JWT token validation and authentication enforcement:
 
@@ -92,7 +100,7 @@ Tests JWT token validation and authentication enforcement:
 - Verify JWT signature using correct algorithm and key
 - Use strong key rotation practices
 
-### Section 3: Authorization & RLS (4 tests)
+### Section 3: Authorization & RLS — `--suite authz`
 
 Tests database-level authorization and cross-organization/user isolation:
 
@@ -107,7 +115,7 @@ Tests database-level authorization and cross-organization/user isolation:
 - Verify user ownership before allowing modifications
 - Validate actor permissions before recording event
 
-### Section 4: Rate Limiting (3 tests)
+### Section 4: Rate Limiting — `--suite ratelimit`
 
 Tests request rate limiting and distributed attack prevention:
 
@@ -118,11 +126,11 @@ Tests request rate limiting and distributed attack prevention:
 **Remediation Guide:**
 - Implement rate limiting middleware (e.g., express-rate-limit)
 - Use sliding window algorithm for fair distribution
-- Store rate limit state in Redis for distributed systems
+- Rate limit state is stored in Upstash Redis over HTTPS (`UPSTASH_REDIS_REST_URL`/`UPSTASH_REDIS_REST_TOKEN`, aliased as `KV_REST_API_URL`/`KV_REST_API_TOKEN` on Vercel) — not a local Redis instance
 - Trust X-Forwarded-For only from trusted proxies
 - Set appropriate limits: 100 req/minute for notifications/emit
 
-### Section 5: Data Exposure (4 tests)
+### Section 5: Data Exposure — `--suite exposure`
 
 Tests for information leakage through errors, headers, and logs:
 
@@ -137,7 +145,7 @@ Tests for information leakage through errors, headers, and logs:
 - Never log user passwords, tokens, or PII
 - Use structured logging with built-in redaction
 
-### Section 6: API Security (4 tests)
+### Section 6: API Security — `--suite api`
 
 Tests cross-origin, CSRF, and request handling:
 
@@ -152,7 +160,7 @@ Tests cross-origin, CSRF, and request handling:
 - Set max request size: 1MB for JSON payloads
 - Set request timeout: 30 seconds default
 
-### Section 7: Email Security (4 tests)
+### Section 7: Email Security — `--suite email`
 
 Tests email delivery and template security:
 
@@ -168,12 +176,12 @@ Tests email delivery and template security:
 - Whitelist safe attachment types: pdf, doc, docx, txt, csv
 - Block: exe, bat, com, scr, zip with embedded executables
 
-### Section 8: External Service Security (4 tests)
+### Section 8: External Service Security — `--suite external`
 
 Tests resilience to external service failures:
 
 - **Gmail API Failures** - Graceful degradation when Gmail unavailable
-- **Redis Connection Loss** - Queue failover and retry
+- **Upstash Redis Failure** - Rate limiting/cache degrades gracefully when Upstash is unreachable (this project has no job queue)
 - **Supabase Downtime** - Database unavailability handling
 - **Cascading Failures** - Multiple simultaneous failures
 
@@ -181,10 +189,10 @@ Tests resilience to external service failures:
 - Implement circuit breakers for external APIs
 - Use exponential backoff for retries (1s, 2s, 4s, 8s, 16s)
 - Store failed jobs in database for manual retry
-- Set sensible timeouts: Gmail 10s, Redis 5s, DB 15s
+- Set sensible timeouts for the Upstash Redis REST calls and Supabase queries
 - Monitor error rates and alert on thresholds
 
-### Section 9: Secret Management (3 tests)
+### Section 9: Secret Management — `--suite secrets`
 
 Tests protection of sensitive credentials:
 
@@ -199,7 +207,7 @@ Tests protection of sensitive credentials:
 - Use secrets manager (Vercel Secrets, AWS Secrets Manager)
 - Never log: passwords, tokens, API keys, database credentials
 
-### Section 10: Compliance (4 tests)
+### Section 10: Compliance — `--suite compliance`
 
 Tests regulatory and audit requirements:
 
@@ -212,7 +220,11 @@ Tests regulatory and audit requirements:
 - Implement automated deletion job: delete notifications >90 days
 - Record all modifications in audit logs
 - Audit logs must include: timestamp, user_id, action, resource, status
-- Implement GDPR endpoints: /api/gdpr/export-data, /api/gdpr/delete-data
+- This project does **not** currently have `/api/gdpr/export-data` or
+  `/api/gdpr/delete-data` endpoints, or a dedicated `/api/audit-logs` route
+  (see the real route list in `../MIGRACION.md` / `GROUND_TRUTH`) — treat
+  the compliance suite's checks against those paths as a gap to fill, not a
+  description of existing functionality
 - Test retention and deletion regularly
 
 ## CI/CD Integration
@@ -241,7 +253,8 @@ jobs:
       - name: Run security tests
         run: |
           cd testing
-          ./2-security-testing.sh --json --fast > results.json
+          ./2-security-testing.sh --format json
+          # Report is written under testing/test-results/, not stdout redirection
           
       - name: Parse results
         run: |
@@ -263,7 +276,7 @@ cd testing
 ./2-security-testing.sh --verbose
 
 # Watch for changes and re-run
-watch -n 10 './2-security-testing.sh --fast'
+watch -n 10 './2-security-testing.sh'
 ```
 
 ## Interpreting Results
@@ -287,21 +300,28 @@ watch -n 10 './2-security-testing.sh --fast'
 
 #### JSON Output
 
+The real shape written to
+`test-results/security-test-report-<timestamp>.json` is an object, not a bare
+array:
+
 ```json
-[
-  {
-    "section": 1,
-    "test": "SQL Injection Detection",
-    "status": "PASS",
-    "details": "Input properly parameterized"
+{
+  "timestamp": "2026-09-10T00:00:00Z",
+  "base_url": "http://localhost:3000",
+  "summary": {
+    "tests_run": 40,
+    "tests_passed": 35,
+    "tests_failed": 2,
+    "warnings": 3,
+    "critical_failures": 0,
+    "pass_rate": 87
   },
-  {
-    "section": 2,
-    "test": "Missing JWT Protection",
-    "status": "FAIL",
-    "details": "No auth check on endpoint"
-  }
-]
+  "status": "FAIL",
+  "details": [
+    { "status": "PASS", "section": "Authentication", "test": "Missing JWT rejected", "severity": "low" },
+    { "status": "FAIL", "section": "Authentication", "test": "Tampered token rejected", "severity": "critical" }
+  ]
+}
 ```
 
 ## Common Issues & Solutions
@@ -313,11 +333,11 @@ watch -n 10 './2-security-testing.sh --fast'
 # Verify API is running
 curl http://localhost:3000/api/health
 
-# Check API_URL environment variable
-echo $API_URL
+# Check BASE_URL environment variable (the script does not read API_URL)
+echo $BASE_URL
 
 # Run with custom URL
-API_URL=http://192.168.1.100:3000 ./2-security-testing.sh
+./2-security-testing.sh --base-url http://192.168.1.100:3000
 ```
 
 ### Issue: CORS tests show false positives
@@ -331,15 +351,15 @@ API_URL=http://192.168.1.100:3000 ./2-security-testing.sh
 
 **Solution:**
 - Tests assume Gmail API not integrated in test environment
-- Add `--fast` flag to skip email tests
+- There is no flag to skip email tests specifically — use `--suite email` to isolate them instead
 - Manually test Gmail integration separately
 
 ### Issue: Rate limiting shows false negatives
 
 **Solution:**
 - Rate limiting may already be triggered by other tests
-- Run section separately: `./2-security-testing.sh --section 4`
-- Clear rate limit state if using Redis: `redis-cli FLUSHDB`
+- Run the suite separately: `./2-security-testing.sh --suite ratelimit`
+- Rate limiting is backed by Upstash Redis over HTTPS, not a local instance, so `redis-cli FLUSHDB` will not clear it — use the Upstash console/API instead
 
 ## Best Practices
 
@@ -355,13 +375,13 @@ API_URL=http://192.168.1.100:3000 ./2-security-testing.sh
 
 ```bash
 # Weekly in CI/CD
-0 0 * * 0 cd /path/to/app/testing && ./2-security-testing.sh --json
+0 0 * * 0 cd /path/to/app/testing && ./2-security-testing.sh --format json
 
 # After security incidents
 ./2-security-testing.sh --verbose
 
 # After dependencies update
-npm update && ./2-security-testing.sh --fast
+npm update && ./2-security-testing.sh
 ```
 
 ### Test-Driven Security
@@ -374,9 +394,9 @@ npm update && ./2-security-testing.sh --fast
 # 5. Commit both test and fix
 
 # Example: prevent header injection
-./2-security-testing.sh --section 7
+./2-security-testing.sh --suite email
 # Implement fix
-./2-security-testing.sh --section 7  # Verify
+./2-security-testing.sh --suite email  # Verify
 ```
 
 ## Extending the Test Suite
@@ -423,7 +443,7 @@ Use this checklist before each release:
 - [ ] Data retention/deletion working (Section 10)
 - [ ] External service failures handled (Section 8)
 - [ ] Email security validated (Section 7)
-- [ ] GDPR endpoints functioning (Section 10)
+- [ ] GDPR-style data export/delete — not implemented yet in this project (Section 10 checks a gap, see note above)
 - [ ] Test results reviewed by security team
 - [ ] All WARN results manually verified
 
@@ -479,6 +499,5 @@ For issues or questions:
 
 ---
 
-**Last Updated:** 2026-08-18
-**Version:** 1.0
-**Maintained by:** Security Team
+**Last Updated:** 2026-09-10 (this correction pass)
+**Maintained by:** whoever runs it — there is no dedicated "Security Team" in this project.

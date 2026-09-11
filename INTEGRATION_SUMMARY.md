@@ -4,6 +4,32 @@
 **Status:** Complete ✅  
 **Created By:** Master Coordinator Agent  
 
+> **Nota de actualización (2026-09-10):** este informe queda como registro
+> histórico de la fecha indicada arriba y no se reescribe, pero varios
+> planes/menciones que contiene **no se concretaron** y hoy son falsos si se
+> leen como estado actual:
+> - **Slack, PagerDuty, Twilio, Datadog** (mencionados como credenciales
+>   pendientes / integraciones a configurar) — el proyecto **nunca los
+>   adoptó**. No hay integración con PagerDuty, Twilio ni Datadog en el
+>   código hoy. Slack sí existe, pero como integración de organización
+>   configurable (relay saliente de notificaciones vía webhook), no como lo
+>   descrito aquí.
+> - **Endpoints GDPR** ("Validates GDPR endpoints exist", "Implement GDPR
+>   endpoints") — no existen endpoints GDPR dedicados en el código actual.
+>   Ver `PRIVACY_POLICY.md` sección 8, que marca el cumplimiento GDPR como
+>   pendiente de revisión legal.
+> - El sistema de notificaciones descrito aquí como orientado a una cola
+>   BullMQ persistente **no se implementó así**: el envío real es
+>   **síncrono** (`src/lib/notifications/notify.ts`), y los fallos quedan
+>   registrados en `public.failed_jobs` **sin reintento automático**. Ver
+>   `OBSERVABILITY.md` sección 6 para el estado real y verificado.
+> - Observabilidad real hoy: `@sentry/nextjs` ^10.70.0 sí está instalado y
+>   activo (antes bloqueado por incompatibilidad de peer-dependencies con
+>   Next.js, ya resuelto). Datadog/Grafana/Prometheus **no están operativos**
+>   — ver `OBSERVABILITY.md`.
+> - Conteo real de tests hoy: **15 suites, 215 tests** (Jest), no los
+>   conteos de funciones de scripts shell descritos en este documento.
+
 ---
 
 ## 📦 Deliverables Created

@@ -1,5 +1,9 @@
 # Security Testing Quick Start Guide
 
+**Estado (verificado 2026-09-10):** este documento describe `testing/2-security-testing.sh` tal como existe hoy en el repo. Las 10 suites, los nombres exactos de suite (`--suite NAME`), y las opciones (`--base-url`, `--format`, `--verbose`, `--debug`, `--help`) coinciden con el script real — a diferencia de otros documentos de `testing/` que describían flags inventados, este ya estaba mayormente al día. Un dato importante que sí hace falta aclarar: la Sección 10 (Compliance) prueba `/api/admin/delete-user`, `/api/admin/audit-logs` y `/api/admin/export-data`; **estos tres endpoints no existen** en el proyecto (confirmado también en `docs/SECURITY_ENDPOINTS_CHECKLIST.md` y `docs/BLOCKERS_RESOLUTION_SUMMARY.md`). El script ya maneja esto correctamente — un `404`/`501` se registra como `WARN` ("Endpoint not yet implemented"), no como fallo — pero si necesitas cumplimiento GDPR real, esos endpoints hay que construirlos.
+
+Migrar el proyecto a otra cuenta no afecta a este script — solo lee `BASE_URL`/`--base-url` para apuntar al dominio que quieras probar. Ver [`../MIGRACION.md`](../MIGRACION.md) para el resto de la migración de cuenta.
+
 ## Overview
 
 The `2-security-testing.sh` script provides comprehensive security testing for the TaskFlow Notification System with 10 test suites covering 40+ security scenarios.
@@ -318,7 +322,7 @@ TIMEOUT=30 ./2-security-testing.sh
 2. **Categorize** - separate FAIL from WARN
 3. **Fix FAILs** - implement critical fixes
 4. **Retest** - run `--suite` tests for fixes
-5. **Document WAINs** - decide: implement or accept risk
+5. **Document WARNs** - decide: implement or accept risk
 6. **Archive report** - save for compliance audit trail
 7. **Redeploy** - confirm all FAILs resolved before production
 

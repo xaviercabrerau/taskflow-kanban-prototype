@@ -1,531 +1,221 @@
-# TaskFlow Notification System - Credentials Setup Guide
+# Credentials Setup Guide
 
-Complete step-by-step instructions for obtaining and configuring credentials for all external services used by the TaskFlow Notification System.
+**Last verified against the code:** 2026-09-09 (`.env.example` + every `process.env.*`
+reference in `src/`).
 
-## Table of Contents
+How to obtain and configure the credentials for the external services TaskFlow actually
+uses. The authoritative list of variables is `.env.example` at the repo root; this
+document explains where each value comes from.
 
-1. [Slack Integration](#slack-integration)
-2. [PagerDuty Integration](#pagerduty-integration)
-3. [Twilio Integration](#twilio-integration)
-4. [Gmail API Configuration](#gmail-api-configuration)
-5. [Sentry Error Tracking](#sentry-error-tracking)
-6. [Datadog Monitoring](#datadog-monitoring)
-7. [Supabase Configuration](#supabase-configuration)
-8. [Verification & Testing](#verification--testing)
+> **This file names environment variables. It never contains their values.** Real keys
+> live in `.env.local` (git-ignored) and in Vercel → Project Settings → Environment
+> Variables.
 
----
+> **Migration note:** the accounts referenced here (Supabase project
+> `txdyijyswpsalqnwfopc`, Vercel project `taskflow-kanban-prototype`, the
+> `task.conto.ec` domain) belong to the current owner. To recreate all of this under a
+> different GitHub/Vercel/Supabase account, follow [`MIGRACION.md`](../MIGRACION.md) —
+> it lists every value that must be replaced.
 
-## Slack Integration
-
-### Getting Started
-
-Slack webhook allows TaskFlow to send alert notifications and status updates to a Slack channel.
-
-### Setup Steps
-
-1. **Create a Slack App**
-   - Go to https://api.slack.com/apps
-   - Click "Create New App" → "From scratch"
-   - Name: "TaskFlow Notifications"
-   - Select your Slack workspace
-   - Click "Create App"
-
-2. **Enable Incoming Webhooks**
-   - In the app sidebar, click "Incoming Webhooks"
-   - Toggle "Activate Incoming Webhooks" to ON
-   - Click "Add New Webhook to Workspace"
-   - Select the channel (e.g., #alerts-taskflow)
-   - Click "Allow"
-
-3. **Copy the Webhook URL**
-   - The webhook URL appears on the Incoming Webhooks page
-   - Format: `https://hooks.slack.com/services/T00000000/B00000000/XXXXXXXXXXXXXXXXXXXX`
-   - Copy this to `SLACK_WEBHOOK_URL` in `.env.local`
-
-4. **Optional: Get Bot Token (for advanced features)**
-   - Click "OAuth & Permissions" in the sidebar
-   - Under "Bot Token Scopes", add:
-     - `chat:write`
-     - `channels:read`
-     - `users:read`
-   - Copy the "Bot User OAuth Token" (starts with `xoxb-`)
-   - Add to `SLACK_BOT_TOKEN` in `.env.local`
-
-5. **Optional: Get Signing Secret (for webhook verification)**
-   - Click "Basic Information" in the sidebar
-   - Copy "Signing Secret"
-   - Add to `SLACK_SIGNING_SECRET` in `.env.local`
-
-### Validation
-
-```bash
-# Test webhook connectivity
-curl -X POST $SLACK_WEBHOOK_URL \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "text": "Test message from TaskFlow",
-    "channel": "#alerts-taskflow"
-  }'
-
-# Expected: Response code 200 with empty body
-```
+> **Previous versions of this guide documented Slack, PagerDuty, Twilio, Datadog and a
+> Gmail service account.** None of those are wired into this codebase — they came from a
+> generic observability boilerplate (Auditoría 2026-09-03, finding 16). They have been
+> removed. If one of them is ever implemented for real, add its variables to
+> `.env.example` and a section here as it is wired in.
 
 ---
 
-## PagerDuty Integration
+## Contents
 
-### Getting Started
-
-PagerDuty integration enables automatic incident creation and escalation for critical alerts.
-
-### Setup Steps
-
-1. **Create a PagerDuty Service**
-   - Log in to https://www.pagerduty.com
-   - Click "Services" → "New Service"
-   - Name: "TaskFlow Notification System"
-   - Select an escalation policy (or create new one)
-   - Click "Create Service"
-
-2. **Create Integration Key (Events API v2)**
-   - In the service page, click "Integrations" tab
-   - Click "Add Integrations"
-   - Search for "Events API V2"
-   - Click "Add Integration"
-   - Copy the "Integration Key"
-   - Add to `PAGERDUTY_INTEGRATION_KEY` in `.env.local`
-
-3. **Get PagerDuty API Token (optional, for advanced operations)**
-   - Click account avatar → "Account Settings"
-   - Click "API Access" → "Create Token"
-   - Name: "TaskFlow API"
-   - Copy the token
-   - Add to `PAGERDUTY_API_TOKEN` in `.env.local`
-
-4. **Configure Base URL (if using EU)**
-   - Default (US): `https://events.pagerduty.com/v2/enqueue`
-   - EU: `https://events.eu.pagerduty.com/v2/enqueue`
-   - Update `PAGERDUTY_BASE_URL` accordingly in `.env.local`
-
-### Validation
-
-```bash
-# Test incident creation
-curl -X POST $PAGERDUTY_BASE_URL \
-  -H 'Content-Type: application/json' \
-  -d '{
-    "routing_key": "'$PAGERDUTY_INTEGRATION_KEY'",
-    "event_action": "trigger",
-    "payload": {
-      "summary": "Test alert from TaskFlow",
-      "severity": "warning",
-      "source": "taskflow-test"
-    }
-  }'
-
-# Expected: Response code 202 with event_id
-# Check PagerDuty console for incident creation
-```
+1. [Supabase](#1-supabase-required)
+2. [Vercel](#2-vercel-required)
+3. [Resend](#3-resend-email-notifications)
+4. [Upstash Redis](#4-upstash-redis-rate-limiting)
+5. [Application secrets](#5-application-secrets-self-generated)
+6. [Sentry](#6-sentry-optional)
+7. [Google Cloud OAuth](#7-google-cloud-oauth-optional)
+8. [Verification](#8-verification)
+9. [Security practices](#9-security-practices)
 
 ---
 
-## Twilio Integration
+## 1. Supabase (required)
 
-### Getting Started
+Database, authentication, RLS, storage, Vault and `pg_cron`. Without it the app does not
+start.
 
-Twilio enables SMS notifications to on-call engineers for critical incidents.
+1. Go to <https://app.supabase.com> → **New Project**. Save the database password
+   somewhere safe — it is needed for `pg_dump`/`pg_restore` during a migration.
+2. **Project Settings → API**:
+   - *Project URL* → `NEXT_PUBLIC_SUPABASE_URL`
+   - *anon public* key → `NEXT_PUBLIC_SUPABASE_ANON_KEY`
+   - *service_role secret* key → `SUPABASE_SERVICE_ROLE_KEY`
+3. The local scripts in `scripts/` (`generate-test-users.js`,
+   `generate-test-tokens.js`) read the non-prefixed duplicates `SUPABASE_URL` and
+   `SUPABASE_ANON_KEY`. The app itself does not.
 
-### Setup Steps
+**`SUPABASE_SERVICE_ROLE_KEY` bypasses RLS entirely.** It is server-only: never give it
+a `NEXT_PUBLIC_` prefix, never import it into a client component. It is required by
+`/api/admin/users`, `/api/admin/create-user`, `/api/admin/link-existing-user`,
+`/api/admin/reset-password`, the notification send path and the integration clients.
+Without it those endpoints return `500`; read-only endpoints keep working, which makes
+the failure look intermittent.
 
-1. **Create Twilio Account**
-   - Go to https://www.twilio.com/console
-   - Sign up for account
-   - Verify your phone number
-
-2. **Get Account SID & Auth Token**
-   - Dashboard shows "Account SID" and "Auth Token"
-   - Copy "Account SID" to `TWILIO_ACCOUNT_SID` in `.env.local`
-   - Copy "Auth Token" to `TWILIO_AUTH_TOKEN` in `.env.local`
-
-3. **Purchase a Phone Number**
-   - Click "Phone Numbers" → "Get Started"
-   - Click "Get a Phone Number"
-   - Choose country/area code
-   - Click "Search"
-   - Click "Buy" for desired number
-   - Phone number added to your account
-
-4. **Configure Twilio Number**
-   - In "Phone Numbers" → "Active Numbers", copy your phone number
-   - Format: +1234567890 (with country code)
-   - Add to `TWILIO_FROM_NUMBER` in `.env.local`
-
-5. **Add On-Call Phone Number**
-   - Get the primary on-call engineer's phone number
-   - Format: +1234567890 (with country code)
-   - Add to `ON_CALL_PRIMARY_PHONE` in `.env.local`
-
-### Validation
-
-```bash
-# Test SMS sending
-curl -X POST https://api.twilio.com/2010-04-01/Accounts/$TWILIO_ACCOUNT_SID/Messages.json \
-  -u "$TWILIO_ACCOUNT_SID:$TWILIO_AUTH_TOKEN" \
-  -d "From=$TWILIO_FROM_NUMBER" \
-  -d "To=+1234567890" \
-  -d "Body=Test SMS from TaskFlow"
-
-# Expected: Response code 201 with MessageSid
-# You should receive the SMS on the test phone number
-```
+Schema is created by re-running the 114 files in `supabase/migrations/` — never by
+applying SQL by hand.
 
 ---
 
-## Gmail API Configuration
+## 2. Vercel (required)
 
-### Getting Started
+Hosting, deployments and the daily cron.
 
-Gmail API enables email parsing for replying to notifications via email and sending emails through Gmail.
+1. Import the GitHub repo into Vercel (project `taskflow-kanban-prototype`).
+2. Add every environment variable from `.env.example` under **Project Settings →
+   Environment Variables**, for the environments you deploy to.
+3. Point the domain (`task.conto.ec`) at the project under **Settings → Domains**.
+4. `vercel.json` registers the cron `/api/cron/alert-check` at `0 8 * * *`; Vercel picks
+   it up automatically on deploy.
 
-### Setup Steps - OAuth 2.0 (Recommended)
-
-1. **Create Google Cloud Project**
-   - Go to https://console.cloud.google.com
-   - Click "Select a Project" → "New Project"
-   - Name: "TaskFlow Notifications"
-   - Click "Create"
-
-2. **Enable Gmail API**
-   - Search for "Gmail API"
-   - Click "Gmail API" in results
-   - Click "Enable"
-
-3. **Create OAuth 2.0 Credentials**
-   - Click "Create Credentials" → "OAuth 2.0 Client ID"
-   - If prompted, first configure OAuth consent screen:
-     - Click "Configure Consent Screen"
-     - User Type: "Internal" (development) or "External" (production)
-     - Fill in app name, user support email
-     - Add scopes: `https://www.googleapis.com/auth/gmail.readonly`, `https://www.googleapis.com/auth/gmail.send`
-     - Click "Save and Continue" → "Save and Continue" → "Back to Dashboard"
-   - Click "Create Credentials" → "OAuth 2.0 Client ID" again
-   - Application Type: "Web application"
-   - Authorized redirect URIs:
-     - `http://localhost:3000/api/auth/gmail/callback`
-     - `https://your-domain.com/api/auth/gmail/callback` (production)
-   - Click "Create"
-   - Copy Client ID to `GMAIL_CLIENT_ID` in `.env.local`
-   - Copy Client Secret to `GMAIL_CLIENT_SECRET` in `.env.local`
-
-4. **Generate Gmail Refresh Token**
-   - Run the OAuth flow script:
-     ```bash
-     npm run scripts:gmail-auth
-     ```
-   - Browser opens, log in with Google account
-   - Grant permissions to TaskFlow app
-   - Copy the refresh token displayed
-   - Add to `GMAIL_REFRESH_TOKEN` in `.env.local`
-
-### Setup Steps - Service Account (Alternative)
-
-1. **Create Service Account**
-   - Go to https://console.cloud.google.com/iam-admin/serviceaccounts
-   - Click "Create Service Account"
-   - Service account name: "taskflow-notifications"
-   - Click "Create and Continue"
-
-2. **Grant Permissions**
-   - Grant these roles:
-     - `Editor` (for testing)
-     - Or `Gmail API Admin` (more restricted)
-   - Click "Continue" → "Done"
-
-3. **Create Key**
-   - Click the service account created
-   - Click "Keys" tab
-   - Click "Add Key" → "Create new key"
-   - Key type: "JSON"
-   - Click "Create"
-   - File automatically downloads
-   - Convert to single-line JSON and add to `GMAIL_SERVICE_ACCOUNT_JSON` in `.env.local`
-
-4. **Enable Domain-Wide Delegation (for sending emails)**
-   - In service account, click "Details"
-   - Enable "Domain-wide delegation"
-   - Add OAuth scopes:
-     - `https://www.googleapis.com/auth/gmail.send`
-     - `https://www.googleapis.com/auth/gmail.readonly`
-
-### Validation
-
-```bash
-# Test Gmail API connectivity
-curl -X GET https://www.googleapis.com/gmail/v1/users/me/profile \
-  -H "Authorization: Bearer $GMAIL_API_TOKEN"
-
-# Expected: Response code 200 with profile information
-
-# Test sending email
-curl -X POST https://www.googleapis.com/gmail/v1/users/me/messages/send \
-  -H "Authorization: Bearer $GMAIL_API_TOKEN" \
-  -H "Content-Type: application/json" \
-  -d '{
-    "raw": "Base64-encoded email message"
-  }'
-```
+The repo's `.vercel/project.json` already contains `projectId` and `orgId`, so
+`vercel deploy --prod` from the repo root targets the right project.
 
 ---
 
-## Sentry Error Tracking
+## 3. Resend (email notifications)
 
-### Getting Started
-
-Sentry provides error tracking and monitoring for production issues.
-
-### Setup Steps
-
-1. **Create Sentry Account**
-   - Go to https://sentry.io
-   - Sign up for account
-
-2. **Create Project**
-   - Click "Create Project"
-   - Select runtime: "Next.js" or "Node.js"
-   - Name: "TaskFlow Notifications"
-   - Click "Create Project"
-
-3. **Get DSN**
-   - Project Settings appear
-   - Copy "Client Keys (DSN)" value (public key)
-   - Add to `NEXT_PUBLIC_SENTRY_DSN` in `.env.local`
-   - Also copy to `SENTRY_DSN` for server-side
-
-4. **Optional: Get Auth Token**
-   - Click account avatar → "Account Settings"
-   - Click "Auth Tokens"
-   - Click "Create New Token"
-   - Grant permissions: `event:read`, `event:write`, `project:write`
-   - Copy token to `SENTRY_AUTH_TOKEN` in `.env.local`
-
-5. **Set Environment**
-   - Add `NEXT_PUBLIC_SENTRY_ENVIRONMENT=development` (or staging/production)
-   - Update `.env.local` accordingly
-
-### Validation
-
-```bash
-# Test Sentry by triggering an error
-# In your app code:
-import * as Sentry from "@sentry/nextjs";
-Sentry.captureException(new Error("Test error from TaskFlow"));
-
-# Check Sentry dashboard for error
-```
+1. <https://resend.com> → **API Keys** → create a key → `RESEND_API_KEY`.
+2. **Domains** → add and verify the sending domain (DKIM/SPF DNS records).
+3. Set `NOTIFICATION_FROM_EMAIL` to an address on that verified domain. Sending from an
+   unverified domain fails silently from the user's point of view — the failure lands in
+   the `failed_jobs` table, since the send path is best-effort with no retry queue.
+4. `NEXT_PUBLIC_APP_URL` must be the public base URL, because outgoing emails build
+   absolute task links from it (`src/lib/emails/utils.ts`). It falls back to
+   `http://localhost:3000` if unset, which produces unusable links in production.
 
 ---
 
-## Datadog Monitoring
+## 4. Upstash Redis (rate limiting)
 
-### Getting Started
+`src/lib/rate-limit.ts` accepts **either** naming pair:
 
-Datadog provides metrics, logging, and monitoring dashboards.
+| Source | Variables |
+|---|---|
+| Upstash directly (<https://upstash.com> → Create Database → REST API) | `UPSTASH_REDIS_REST_URL`, `UPSTASH_REDIS_REST_TOKEN` |
+| Vercel Marketplace "Upstash for Redis" integration (legacy `@vercel/kv` naming) | `KV_REST_API_URL`, `KV_REST_API_TOKEN` |
 
-### Setup Steps
-
-1. **Create Datadog Account**
-   - Go to https://www.datadoghq.com/free-datadog-trial/
-   - Sign up for free trial or account
-
-2. **Get API Key**
-   - Click account menu → "Organization Settings"
-   - Click "API Keys"
-   - Copy "default" key or create new one
-   - Add to `DD_API_KEY` in `.env.local`
-
-3. **Get Application Key**
-   - Click "Application Keys"
-   - Copy existing key or create new one
-   - Add to `DD_APP_KEY` in `.env.local`
-
-4. **Set Site**
-   - Determine your Datadog site:
-     - US: `datadoghq.com`
-     - US (gov): `ddog-gov.com`
-     - EU: `datadoghq.eu`
-   - Add to `DD_SITE` in `.env.local`
-
-### Validation
-
-```bash
-# Test Datadog API
-curl -X GET "https://api.${DD_SITE}/api/v1/validate" \
-  -H "DD-API-KEY: $DD_API_KEY"
-
-# Expected: Response code 200 with validation status
-```
+Configure one pair. With neither, rate limiting silently degrades to a weak in-memory
+limiter that does not work across serverless instances.
 
 ---
 
-## Supabase Configuration
+## 5. Application secrets (self-generated)
 
-### Getting Started
-
-Supabase provides PostgreSQL database and real-time capabilities.
-
-### Setup Steps
-
-1. **Create Supabase Project**
-   - Go to https://app.supabase.com
-   - Click "New Project"
-   - Organization: Select or create
-   - Name: "taskflow-notifications"
-   - Password: Create strong password (save it!)
-   - Region: Select closest region
-   - Click "Create new project"
-
-2. **Get API Keys**
-   - Once project is created, go to "Settings" → "API"
-   - Copy "Project URL" to `NEXT_PUBLIC_SUPABASE_URL`
-   - Copy "anon public" key to `NEXT_PUBLIC_SUPABASE_ANON_KEY`
-   - Copy "service_role secret" key to `SUPABASE_SERVICE_ROLE_KEY`
-   - Add all to `.env.local`
-
-3. **Get Database Connection Info**
-   - Go to "Settings" → "Database"
-   - Copy host, port, database name
-   - Create connection string and add to:
-     - `DATABASE_URL` in `.env.local`
-     - `SUPABASE_USER`, `SUPABASE_PASSWORD`, `SUPABASE_HOST`, `SUPABASE_PORT`
-
-### Validation
+These are not obtained from a third party — generate them yourself:
 
 ```bash
-# Test Supabase connection
-npm run supabase:status
-
-# Test API connectivity
-curl -X GET "$NEXT_PUBLIC_SUPABASE_URL/rest/v1/" \
-  -H "apikey: $NEXT_PUBLIC_SUPABASE_ANON_KEY"
-
-# Expected: Response code 200 with version info
+openssl rand -base64 32
 ```
+
+| Variable | Used by |
+|---|---|
+| `CRON_SECRET` | `/api/cron/alert-check`. Vercel Cron sends it as `Authorization: Bearer …`; external monitors that cannot set headers may use `?secret=`. Compared with `timingSafeEqual`. |
+| `INTERNAL_NOTIFY_SECRET` | `x-internal-secret` header on `/api/internal/notify-event` and `/api/internal/sync-calendar-event`. These are called by Postgres triggers through `pg_net`, never from a browser. |
+| `JWT_SECRET` | Signs and verifies the Google OAuth `state` parameter (`src/lib/google/oauth.ts`). Unrelated to Supabase Auth's own JWTs. |
+
+`ALERT_WEBHOOK_URL` is the incoming webhook (Slack, Discord or similar) that
+`/api/cron/alert-check` posts to when a health check fails. It is a destination URL, not
+an account credential — the app has no Slack integration beyond posting to this URL.
+
+Rotating `INTERNAL_NOTIFY_SECRET` requires updating both Vercel and the Postgres
+triggers/settings that send it; rotate it deliberately, not casually.
 
 ---
 
-## Verification & Testing
+## 6. Sentry (optional)
 
-### Pre-Flight Checklist
+1. <https://sentry.io> → create a **Next.js** project.
+2. **Client Keys (DSN)** → `NEXT_PUBLIC_SENTRY_DSN` (browser) and `SENTRY_DSN` (server).
+3. Configuration lives in `sentry.client.config.ts`, `sentry.server.config.ts`,
+   `sentry.edge.config.ts` and `instrumentation-client.ts`.
 
-```bash
-# Copy .env.example to .env.local
-cp .env.example .env.local
+The app runs fine without a DSN; errors simply go unreported.
 
-# Edit .env.local with your credentials
-nano .env.local
+---
 
-# Validate all credentials are set
-./scripts/validate-credentials.sh
+## 7. Google Cloud OAuth (optional)
 
-# Test each service individually
-npm run test:slack
-npm run test:pagerduty
-npm run test:gmail
-npm run test:sentry
-npm run test:twilio
-```
+Needed only for the Calendar / Drive / Gmail-send integrations.
 
-### Test Command Examples
+1. <https://console.cloud.google.com> → create a project.
+2. **APIs & Services → Library**: enable Google Calendar API, Google Drive API, Gmail
+   API.
+3. **Credentials → Create Credentials → OAuth 2.0 Client ID → Web application**.
+   Authorized redirect URIs:
+   - `http://localhost:3000/api/integrations/google/callback`
+   - `https://task.conto.ec/api/integrations/google/callback`
+4. Client ID → `GOOGLE_CLIENT_ID`; client secret → `GOOGLE_CLIENT_SECRET`; the redirect
+   URI you use → `GOOGLE_OAUTH_REDIRECT_URI`.
+5. For the browser-side Drive Picker, the same client ID is also needed as
+   `NEXT_PUBLIC_GOOGLE_CLIENT_ID`, plus a browser API key as
+   `NEXT_PUBLIC_GOOGLE_PICKER_API_KEY`. Both are exposed in the client bundle by design
+   — OAuth client IDs are public, and the Picker key must be restricted by HTTP referrer
+   in Google Cloud Console rather than kept secret.
 
-```bash
-# Test Slack
-./dev/2-debug-utils.sh debug_api_request POST /api/webhooks/slack \
-  '{"text":"Test from TaskFlow"}'
+The OAuth flow starts at `/api/integrations/google/connect` and returns to
+`/api/integrations/google/callback`; per-tenant tokens are stored in Supabase Vault, not
+in environment variables.
 
-# Test PagerDuty
-./dev/2-debug-utils.sh debug_api_request POST /api/webhooks/pagerduty \
-  '{"severity":"warning","summary":"Test alert"}'
+**Inbound Gmail is not operational.** `/api/webhooks/gmail-reply` returns `501`: no
+Google Workspace mailbox exists to receive replies through. See
+[`NOTIFICATION_SYSTEM_DESIGN.md`](./NOTIFICATION_SYSTEM_DESIGN.md).
 
-# Test Gmail
-./dev/2-debug-utils.sh debug_api_request GET /api/webhooks/gmail/status
+---
 
-# Test SMS
-./dev/2-debug-utils.sh debug_api_request POST /api/webhooks/sms \
-  '{"to":"+1234567890","message":"Test SMS"}'
-```
-
-### Troubleshooting
-
-#### Slack Issues
-- **Webhook not working**: Verify channel still exists and bot has access
-- **Rate limited**: Check Slack API rate limits in workspace settings
-- **Message formatting**: Validate JSON payload format
-
-#### PagerDuty Issues
-- **No incidents created**: Verify integration key is correct
-- **EU connectivity**: Check `PAGERDUTY_BASE_URL` is set to EU endpoint
-- **Escalation not triggering**: Verify escalation policy is configured
-
-#### Gmail Issues
-- **Auth token expired**: Refresh token using `npm run scripts:gmail-auth`
-- **Rate limited**: Implement exponential backoff in email sending
-- **Quota exceeded**: Check Gmail API quotas in Google Cloud Console
-
-#### Sentry Issues
-- **No errors captured**: Verify DSN is correct and `NODE_ENV=production`
-- **Missing source maps**: Ensure source maps are uploaded to Sentry
-- **Rate limited**: Check Sentry plan limits
-
-#### Twilio Issues
-- **SMS not delivered**: Verify phone number is correctly formatted (+1234567890)
-- **Authentication failed**: Double-check Account SID and Auth Token
-- **No SMS balance**: Add credits to Twilio account
-
-### Monitoring Setup
-
-Once credentials are configured, set up monitoring:
+## 8. Verification
 
 ```bash
-# Enable Sentry error tracking
-export SENTRY_DSN=your-dsn
-
-# Enable Datadog metrics
-export DD_API_KEY=your-api-key
-export DD_APP_KEY=your-app-key
-
-# Start application
+# Local
+cp .env.example .env.local     # then fill in the real values
+npm test                       # 15 suites, 215 tests
 npm run dev
+curl -s http://localhost:3000/api/health
 
-# Check health endpoint
-curl http://localhost:3000/api/health
+# Production
+curl -s https://task.conto.ec/api/health
+curl -s https://task.conto.ec/api/health/cron
 ```
 
----
+`/api/health` returns `{"status":"ok","checks":{"supabase":{"ok":true,...}},...}` when
+the Supabase credentials are valid, and `503` with the failing check otherwise.
 
-## Security Best Practices
+Quick per-service checks:
 
-1. **Never commit `.env.local`** - Add to `.gitignore`
-2. **Rotate credentials regularly** - Update keys every 90 days
-3. **Use different credentials per environment**:
-   - Development: Use test/sandbox accounts
-   - Staging: Use separate credentials
-   - Production: Use production credentials with minimal permissions
-4. **Store in secure vault** - Use Vercel Secrets, AWS Secrets Manager, etc.
-5. **Audit access** - Monitor who has access to credentials
-6. **Enable webhook verification** - Use signing secrets to verify requests
-7. **Limit API permissions** - Grant only required scopes/permissions
-
----
-
-## Support & Documentation
-
-- **Slack API Docs**: https://api.slack.com/messaging/webhooks
-- **PagerDuty API Docs**: https://developer.pagerduty.com/docs/events-api-v2/overview
-- **Gmail API Docs**: https://developers.google.com/gmail/api
-- **Twilio SMS Docs**: https://www.twilio.com/docs/sms
-- **Sentry Docs**: https://docs.sentry.io
-- **Datadog Docs**: https://docs.datadoghq.com
+| Service | Signal it is configured |
+|---|---|
+| Supabase | `/api/health` is `ok`; login works |
+| Resend | An action that notifies produces an email; no new `failed_jobs` row |
+| Upstash | Rate-limit headers present on rate-limited routes |
+| Sentry | A deliberately thrown error appears in the Sentry project |
+| Google OAuth | `/admin/integraciones` completes the Google connect flow |
+| Cron | `/api/health/cron` reports the `pg_cron` jobs as healthy |
 
 ---
 
-Last updated: 2026-08-18
+## 9. Security practices
+
+1. `.env.local` is git-ignored — keep it that way, and never commit real keys.
+2. Documentation names variables only. If you find a real key in a doc, treat it as
+   leaked and rotate it.
+3. Use separate credentials per environment; never point local development at the
+   production Supabase project's service-role key.
+4. `SUPABASE_SERVICE_ROLE_KEY` bypasses RLS: server-only, no `NEXT_PUBLIC_` prefix,
+   smallest possible number of call sites.
+5. Per-tenant integration secrets belong in Supabase Vault (read only by
+   `SECURITY DEFINER` accessors such as `get_crm_credential`, `get_github_token`,
+   `get_ai_credential`), never in a plaintext column and never in an environment
+   variable.
+6. Rotate third-party keys periodically, and immediately if a key was ever pasted
+   somewhere it should not have been.
+7. Keep a secure out-of-band copy of the environment variables: they are not in git, so
+   a lost Vercel project takes them with it.

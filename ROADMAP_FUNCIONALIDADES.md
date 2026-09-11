@@ -1,7 +1,13 @@
 # TaskFlow — Roadmap de funcionalidades adicionales
 
-**Fecha:** 2026-09-03
+**Fecha:** 2026-09-03 (roadmap original) — **actualizado 2026-09-10**
 **Estado:** ✅ **22 de 24 ítems implementados** (las 5 fases completas). 2 ítems no se construyeron — ver nota de cierre al final del documento. De los 22 implementados, 2 (IA e integración GitHub) están **inactivos hasta que la organización agregue sus propias credenciales** en `/admin/integraciones` — el código funciona, solo falta la API key/token.
+
+> **Actualización 2026-09-10:** después de cerrado este roadmap se construyó
+> una funcionalidad adicional no incluida en la comparación original de 24
+> ítems — ver sección 8, "Importación masiva de tareas". El resto del
+> documento no se modificó salvo esta nota, para no reescribir el análisis
+> original.
 **Punto de partida:** ver [DOCUMENTACION_PROYECTO.md](DOCUMENTACION_PROYECTO.md) para el inventario completo de lo que ya existe hoy (tableros, RBAC, notificaciones, automatizaciones, MCP, integraciones de Google, etc.) — este documento cubre **solo lo que falta**, comparado contra plataformas líderes de gestión de tareas (Asana, ClickUp, Linear, Jira, Monday).
 
 Cada ítem indica: **qué es**, **por qué importa**, **esfuerzo** (S/M/L) y si **ya hay base en el esquema** (para no reinventar lo que ya está a medio construir).
@@ -121,6 +127,17 @@ Dado que hoy ya invitas clientes a reuniones de Meet, el paso natural es extende
 21. PWA instalable. ✅
 
 ---
+
+## 8. Actualización posterior al roadmap original (2026-09-10)
+
+| # | Funcionalidad | Estado |
+|---|---|---|
+| 25 | **Importación masiva de tareas** (Excel/CSV) — página `/admin/importar-tareas` (solo owner de la organización), `GET /api/admin/import-tasks/template` (descarga plantilla `.xlsx`) y `POST /api/admin/import-tasks` (sube `.xlsx`/`.xls`/`.csv`, máx. 500 filas, importación parcial con reporte de filas inválidas) | ✅ Hecho — completada 2026-09-08/09, verificada en producción |
+
+No formaba parte de los 24 ítems comparados originalmente contra plataformas
+líderes de gestión de tareas; se agrega aquí porque es la funcionalidad más
+reciente entregada en el proyecto. Detalle técnico completo en
+[`DOCUMENTACION_PROYECTO.md`](DOCUMENTACION_PROYECTO.md).
 
 ## Cierre — qué no se construyó
 

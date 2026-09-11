@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-18 (documento maestro de seguimiento, "45% resuelto" en ese momento). Verificado contra el código actual: los 3 endpoints GDPR (`/api/admin/delete-user`, `/api/admin/export-data`, `/api/admin/audit-logs`) descritos como "pendientes" siguen sin existir hoy en `src/app/api/` — ese punto sigue vigente. En cambio, Sentry (Blocker #8, descrito aquí como "⏳ PENDING") sí está configurado en el código actual (`@sentry/nextjs`, `instrumentation.ts`, `instrumentation-client.ts`, `sentry.*.config.ts`), así que ese ítem ya no refleja el estado real. Las menciones a Slack/PagerDuty como canales de alerta de Sentry no corresponden a integraciones reales del proyecto.
+
 # TaskFlow Notification System - Blockers Resolution Master Document
 
 **Date:** 2026-08-18  

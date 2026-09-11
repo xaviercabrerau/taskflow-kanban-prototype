@@ -1,5 +1,17 @@
 # Integración CRM vía n8n (Opción 1)
 
+> **Nota:** esto es una **plantilla/ejemplo para importar en tu propia
+> instancia de n8n** — TaskFlow no ejecuta n8n ni se conecta a ningún n8n en
+> producción por sí solo. Lo que sí es real y está en producción es el lado
+> TaskFlow de la integración: la función `ingest_webhook_task` (ver
+> `supabase/migrations/20260903230500_crm_integration_base.sql` y sus fixes
+> posteriores) y la UI de **Automatizaciones → Webhooks entrantes/salientes**
+> (`src/components/AutomationsModal.tsx`, `src/components/IntegrationsModal.tsx`,
+> `src/lib/supabase/integrations-repo.ts`). Los dos archivos `.json` de este
+> directorio son workflows de n8n **exportados para importar manualmente**;
+> nadie los ejecuta automáticamente hasta que tú los importes y configures en
+> tu propia cuenta/instancia de n8n.
+
 Ver el diseño completo en
 [`docs/plans/2026-09-03-crm-integration-design.md`](../../docs/plans/2026-09-03-crm-integration-design.md).
 

@@ -1,12 +1,28 @@
 # TaskFlow Testing Infrastructure - Complete Summary
 
+> **Status: verified 2026-09-10.** This directory holds manually-run load and
+> security testing tools — separate from the automated Jest suite (`npm test`,
+> 15 suites / 215 tests, see [`../docs/TESTING.md`](../docs/TESTING.md)). There
+> is no "integration testing" tooling in this directory, despite what earlier
+> drafts of this file claimed.
+>
+> Two real bugs to know about before relying on the K6 scenario commands
+> below: (1) `k6`'s `--stage` flag takes `duration:target` pairs, not a
+> scenario name like `--stage baseline` — that syntax is invalid; (2)
+> `load-test.js` hardcodes `loadTestScenario('baseline')` and never reads a
+> scenario selector from the environment or CLI, and `run-load-tests.sh -s
+> <name>` never passes its `TEST_SCENARIO` value to k6 either. In practice,
+> every command below always runs the same baseline load profile regardless of
+> the scenario name passed. See
+> [`LOAD_TESTING_README.md`](./LOAD_TESTING_README.md) for the full
+> explanation and a real workaround.
+
 ## Overview
 
-This directory contains **production-ready testing infrastructure** for the TaskFlow Notification System, including load testing, security testing, and integration testing capabilities.
+This directory contains load testing and security testing tooling for the
+TaskFlow app.
 
-**Status:** ✅ Complete and production-ready
-**Version:** 1.0.0
-**Last Updated:** August 18, 2026
+**Last Updated (this correction pass):** 2026-09-10
 
 ---
 
@@ -16,10 +32,10 @@ This directory contains **production-ready testing infrastructure** for the Task
 
 | File | Purpose | Status |
 |------|---------|--------|
-| `1-load-testing.yaml` | Complete K6 test configuration (6 scenarios, SLAs, metrics) | ✅ Ready |
-| `load-test.js` | K6 JavaScript implementation with all test scenarios | ✅ Ready |
-| `run-load-tests.sh` | Convenience shell script for running tests | ✅ Ready |
-| `LOAD_TESTING_README.md` | Comprehensive guide for load testing | ✅ Ready |
+| `1-load-testing.yaml` | Reference notes for 6 scenario profiles and SLAs (not read by `load-test.js`) | Reference only |
+| `load-test.js` | K6 script; 6 scenario stage-arrays defined, but only `baseline` is reachable at runtime today | ⚠️ Scenario selection broken — see banner in `LOAD_TESTING_README.md` |
+| `run-load-tests.sh` | Convenience shell wrapper around `k6 run` | ⚠️ `-s/--scenario` does not actually change the k6 run; `-f html` builds an invalid k6 command |
+| `LOAD_TESTING_README.md` | Guide for load testing, with corrections | ✅ Ready |
 
 ### Supporting Test Files
 
@@ -242,8 +258,8 @@ k6 run --out csv=results.csv testing/load-test.js
 # JSON format
 k6 run --out json=results.json testing/load-test.js
 
-# HTML report
-k6 run --out html=report.html testing/load-test.js
+# HTML report — NOT supported by stock k6 ("unknown output type" error);
+# would need the separate xk6-dashboard extension, not installed here
 ```
 
 ### With Prometheus/Grafana
@@ -398,6 +414,12 @@ Recommended:
 
 ## 🔄 CI/CD Integration
 
+This repository has **no `.github/workflows/`** and no GitLab CI configured
+today — deploys go straight to production via `vercel deploy --prod` (see
+[`../dev/3-development-workflow.md`](../dev/3-development-workflow.md)). The
+YAML below is a starting point if you choose to add CI, not a description of
+an existing pipeline.
+
 ### GitHub Actions
 
 ```yaml
@@ -503,7 +525,7 @@ load_test:
 ### TaskFlow Resources
 - **Issue Tracker:** GitHub Issues
 - **Docs:** See LOAD_TESTING_README.md
-- **Monitoring:** See OBSERVABILITY.md
+- **Monitoring:** See [`../OBSERVABILITY.md`](../OBSERVABILITY.md)
 
 ---
 
@@ -549,6 +571,11 @@ load_test:
 
 ---
 
-**Production Status:** ✅ Ready for Deployment
-**Last Updated:** August 18, 2026
-**Maintained By:** TaskFlow DevOps Team
+**Status:** the security script (`2-security-testing.sh`) is runnable as
+documented (once the flag corrections above are applied). The K6 load-testing
+tooling only reliably runs the baseline profile today — see the scenario-
+selection bug noted at the top of this document and in
+[`LOAD_TESTING_README.md`](./LOAD_TESTING_README.md) before relying on the
+other scenarios.
+**Last Updated:** 2026-09-10 (this correction pass)
+**Maintained By:** whoever runs it — there is no dedicated "TaskFlow DevOps Team" in this project.

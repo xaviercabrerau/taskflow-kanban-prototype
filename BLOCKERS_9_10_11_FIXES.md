@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-18. Verificado contra el código actual: los entregables descritos aquí fueron principalmente documentación (`docs/PII_SCRUBBING.md`, `docs/AUDIT_LOGGING.md`, `CREDENTIALS_SETUP.md`, que sí existen hoy), pero el código que describen (clase `PIIScrubber`, clase `AuditLogger`, tabla `audit_logs` con retención GDPR) nunca se implementó en `src/` ni en `supabase/migrations/`. Las variables de entorno mencionadas (`ALERTS_EMAIL_RECIPIENTS`, `ENGINEERING_LEAD_EMAIL`, `RUNBOOK_BASE_URL`, etc.) ya no están en `.env.example` actual. Los canales Slack/PagerDuty citados en `ops/1-monitoring-alerts.yaml` nunca se conectaron a código real — el propio `.env.example` de hoy los describe como "variables de un boilerplate de observabilidad genérico ... que este proyecto nunca conectó". Tratar este documento como registro de intención/planificación de esa fecha, no como estado actual.
+
 # TaskFlow Notification System - Blockers 9, 10, 11 Fixes
 
 **Status:** Completed  

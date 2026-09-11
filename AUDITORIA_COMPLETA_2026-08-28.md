@@ -1,5 +1,7 @@
 # Auditoría completa — TaskFlow Kanban Prototype
 
+> **Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-28/29. Verificado contra el código actual: los hallazgos de "Arquitectura y calidad de código" #1 (`BoardContext.tsx` god-object en un único `useMemo`) y #4 (código muerto `src/lib/notifications/gmail.ts` y dependencias `googleapis`/`google-auth-library`) ya NO reflejan el estado actual — fueron corregidos posteriormente (ver `AUDITORIA_2026-09-03.md`, hallazgos #10/#11): `BoardContext.tsx` mide hoy 623 líneas con 3 `useMemo`, `gmail.ts` fue eliminado y esas dependencias ya no están en `package.json`. El resto de hallazgos (bugs de notificaciones, verificación en vivo) se mantiene como registro histórico válido. El dominio `https://task.conto.ec` citado abajo sigue siendo la URL de producción real; si el proyecto se migra a otra cuenta ver [`MIGRACION.md`](MIGRACION.md).
+
 **Fecha:** 2026-08-28 / 2026-08-29
 **Alcance:** solo `taskflow-kanban-prototype` (no otros proyectos en `~/Claude/`)
 **Método:** 5 agentes especializados en paralelo (arquitectura, rendimiento, accesibilidad, cobertura de tests, salud de dependencias) + verificación en vivo de los hallazgos críticos contra producción (`https://task.conto.ec`).

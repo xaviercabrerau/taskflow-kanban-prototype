@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico (referencia del 2026-08-20). Verificado contra el código actual: las variables `SLACK_WEBHOOK_URL` y `GRAFANA_ADMIN_PASSWORD` que este quick start pide configurar no las usa ningún código en `src/`, y las rutas `/api/analytics/*` que menciona no existen hoy. Solo quedan `docker-compose.grafana.yml` y `config/grafana/provisioning/` como configuración sin datos reales detrás. Seguir esta guía tal cual no levantará un dashboard funcional integrado con la app; el dashboard real en producción es la página `/dashboard` del proyecto.
+
 # Phase 6.3 Quick Start Guide
 
 Fast setup and common commands for BI & Dashboards.

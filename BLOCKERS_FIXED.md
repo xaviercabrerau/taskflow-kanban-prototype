@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-18. Verificado contra el código actual: las credenciales de Slack, PagerDuty, Twilio y Datadog descritas como "añadidas" a `.env.example` ya no están ahí — el `.env.example` actual indica explícitamente que esos servicios "nunca se conectaron" al proyecto (no hay `SLACK_WEBHOOK_URL`, `PAGERDUTY_INTEGRATION_KEY`, `TWILIO_ACCOUNT_SID` ni variables de Datadog en `src/`). La migración de URLs en `ops/1-monitoring-alerts.yaml` sí se aplicó y sigue en pie hoy, pero `dev/2-debug-utils.sh` NO usa `${API_BASE_URL}`/`${TASKFLOW_URL}` como se afirma aquí — sigue con `http://localhost:3000` hardcodeado en varias líneas. Ver `docs/HARDCODED_URLS_MIGRATION.md` para el detalle actualizado.
+
 # TaskFlow Notification System - Blockers Fixed
 
 ## Status: All 3 Blockers Resolved

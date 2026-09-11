@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-18. Verificado contra el código actual: los documentos que crea (`docs/LOAD_TEST_SETUP.md`, `docs/SECURITY_ENDPOINTS_CHECKLIST.md`, `docs/SENTRY_SETUP.md`) y los scripts (`scripts/generate-test-users.js`, `scripts/generate-test-tokens.js`) siguen existiendo. Los 3 endpoints GDPR listados como "Planned"/pendientes (`/api/admin/delete-user`, `/api/admin/export-data`, `/api/admin/audit-logs`) siguen sin implementarse hoy. A diferencia de lo descrito aquí como pendiente, Sentry sí terminó configurándose en el código real (`@sentry/nextjs` + archivos `instrumentation*`/`sentry.*.config.ts`); las referencias a notificaciones por Slack/PagerDuty en la sección de Sentry no corresponden a integraciones reales del proyecto.
+
 # TaskFlow Notification System - Blockers Resolution Summary
 
 **Date:** 2026-08-18  

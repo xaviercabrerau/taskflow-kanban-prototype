@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico del 2026-08-18, con alcance limitado a los archivos de `ops/` y `dev/` del sistema de notificaciones (no al dominio de producción de la app). Verificado contra el código actual: los reemplazos en `ops/1-monitoring-alerts.yaml` (`${RUNBOOK_BASE_URL}`, `${TASKFLOW_URL}`) sí se aplicaron y siguen en pie hoy. Sin embargo, la afirmación sobre `dev/2-debug-utils.sh` es falsa hoy: ese script sigue con `http://localhost:3000` hardcodeado en varias llamadas curl (no usa `${API_BASE_URL}`/`${TASKFLOW_URL}`). Además, este documento nunca cubrió la URL real de producción de la app: `https://task.conto.ec` sigue hardcodeada hoy en `src/app/admin/api-docs/page.tsx` y en `src/lib/google/__tests__/oauth.test.ts` — si el proyecto se migra a otra cuenta, ese valor (y el dominio en general) debe actualizarse; ver [`MIGRACION.md`](../MIGRACION.md).
+
 # Hardcoded URLs Migration
 
 ## Overview

@@ -1,4 +1,45 @@
-# TaskFlow Notification System - Debug Utilities Guide
+# TaskFlow - Debug Utilities Guide (`dev/2-debug-utils.sh`)
+
+> **Status: verified 2026-09-10** against `dev/2-debug-utils.sh`, the migrations
+> in `supabase/migrations/` and the app's real runtime dependencies.
+>
+> **Read this before using the script.** Every command listed below really is
+> implemented in `dev/2-debug-utils.sh` (the dispatcher and the functions exist).
+> What is *not* true is the environment they assume. The script was written for a
+> stack this project never adopted:
+>
+> - It talks to Postgres through **`DATABASE_URL` + `psql`**. TaskFlow does not
+>   use `DATABASE_URL`; it reaches Supabase over the JS client with
+>   `NEXT_PUBLIC_SUPABASE_URL` / `NEXT_PUBLIC_SUPABASE_ANON_KEY` /
+>   `SUPABASE_SERVICE_ROLE_KEY`.
+> - It talks to Redis through **local `redis-cli` on port 6379**. TaskFlow uses
+>   **Upstash Redis over HTTPS** (`UPSTASH_REDIS_REST_URL` /
+>   `UPSTASH_REDIS_REST_TOKEN`, aliased by Vercel as `KV_REST_API_URL` /
+>   `KV_REST_API_TOKEN`). `redis-cli` cannot reach it.
+> - Its database commands query tables that **do not exist in any migration**:
+>   `notification_queue`, `email_queue`, `job_logs`. The real tables are
+>   `notifications`, `notification_preferences`, `email_threads`, `failed_jobs`,
+>   `audit_log`, `activity_log`, `profiles`.
+> - It assumes a **background job worker / queue**. There is none — TaskFlow has
+>   no worker process and no BullMQ-style queue.
+>
+> Consequence: the database, Redis, queue and email-queue commands fall back to
+> **mock data** (the script prints `Using mock queue/cache data`) instead of
+> failing loudly. Treat their output as sample formatting, not as facts about
+> your system.
+>
+> **What still works as advertised:** the HTTP-based helpers — `debug_api_request`,
+> `trace_api_call`, `profile_api_endpoint`, `test_rate_limit`,
+> `simulate_concurrent_requests`, `trace_slow_request` — plus the log helpers
+> (`tail_logs`, `search_logs`, `analyze_errors`, `export_logs`) and
+> `inspect_jwt_token`. Point them at a running `npm run dev` on
+> `http://localhost:3000` or at production.
+>
+> For day-to-day debugging that needs no special tooling, see
+> [`3-development-workflow.md`](./3-development-workflow.md) §9.
+
+Run the script from the `dev/` directory (or call it as `./dev/2-debug-utils.sh`
+from the repo root):
 
 ## Quick Start
 

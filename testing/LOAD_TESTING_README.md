@@ -1,12 +1,46 @@
 # TaskFlow Notification System - Load Testing Guide
 
+> **Status: verified 2026-09-10** against `testing/load-test.js` and
+> `testing/run-load-tests.sh`. Two important corrections to what earlier
+> drafts of this guide claimed:
+>
+> 1. **`k6 run --stage <name> load-test.js` is not valid k6 syntax.** K6's real
+>    `--stage` flag takes `duration:target` pairs (e.g. `--stage
+>    5m:100,10m:100,5m:0`), not a scenario name like `baseline` or `stress`.
+>    Every `k6 run ... --stage baseline|ramp_up|spike|stress|endurance|
+>    email_delivery ...` command shown below either errors out or is silently
+>    ignored by k6 — it is not how this script selects a scenario.
+> 2. **`load-test.js`'s scenario selection is hardcoded and does not work.**
+>    `options.stages` calls `loadTestScenario('baseline')` with the literal
+>    string `'baseline'` — it never reads an environment variable or CLI flag.
+>    `run-load-tests.sh`'s `-s/--scenario` flag sets a local `TEST_SCENARIO`
+>    shell variable but never passes it to k6 (no `-e TEST_SCENARIO=...`). The
+>    practical effect: **`k6 run load-test.js` and `./run-load-tests.sh -s
+>    <anything>` all run the same hardcoded baseline stages (30s→10 VUs, 5m
+>    sustained, 30s ramp-down)** — the `ramp_up`/`spike`/`stress`/`endurance`/
+>    `email_delivery` stage arrays defined in `loadTestScenario()` are dead
+>    code today, unreachable from the CLI. To actually run one of those
+>    profiles, pass k6's real stage syntax directly, e.g.:
+>    ```bash
+>    k6 run --stage 2m:10,2m:500,2m:10,4m:10 testing/load-test.js   # spike-like profile
+>    ```
+>    or edit the `loadTestScenario('baseline')` call in `load-test.js` to pass
+>    a different literal (`'stress'`, `'spike'`, etc.) before running.
+>
+> Everything else below (env vars, thresholds, general k6 usage) has been
+> checked and is accurate.
+
 ## Overview
 
-This directory contains production-ready load testing infrastructure for the TaskFlow Notification System using K6, an open-source load testing tool designed for DevOps and developers.
+This directory contains load testing infrastructure for the TaskFlow
+Notification System using K6, an open-source load testing tool. It is a
+manually-run tool, not part of `npm test` — see
+[`../docs/TESTING.md`](../docs/TESTING.md) for the automated suite.
 
 **Key Files:**
-- `1-load-testing.yaml` - Complete test scenario configuration and SLA definitions
-- `load-test.js` - K6 JavaScript implementation with all test scenarios
+- `1-load-testing.yaml` - Reference configuration/SLA notes (not read by `load-test.js` at runtime)
+- `load-test.js` - K6 JavaScript implementation (see the scenario-selection caveat above)
+- `run-load-tests.sh` - convenience wrapper (same caveat applies to its `-s/--scenario` flag)
 - `LOAD_TESTING_README.md` - This guide
 
 ## Quick Start
@@ -231,9 +265,12 @@ k6 run --out json=results.json load-test.js
 ```
 
 **HTML Report:**
-```bash
-k6 run --out html=report.html load-test.js
-```
+
+Stock k6 has **no built-in `html` output** — `--out html=report.html` is not
+a real k6 flag value and will fail with "unknown output type". Producing an
+HTML report requires a separate tool (e.g. the community `xk6-dashboard`
+extension, which is not installed in this project) or converting the JSON
+output yourself.
 
 ### Prometheus/Grafana Integration
 

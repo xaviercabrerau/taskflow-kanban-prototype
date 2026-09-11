@@ -1,12 +1,16 @@
 # Security Testing Script - Summary & Features
 
-## Deliverable
-**File:** `/Users/xaviercabrera/Claude/taskflow-kanban-prototype/testing/2-security-testing.sh`
+> Verified 2026-09-10: the script is currently 993 lines (line counts drift as
+> the script is edited — don't treat this as exact). Flags/env vars below
+> match the script; see [`SECURITY-TESTING-README.md`](./SECURITY-TESTING-README.md)
+> for corrections made to older drafts of the sibling docs in this directory.
 
-**Size:** 978 lines  
-**Language:** Bash 4.0+  
-**Executable:** Yes (chmod +x)  
-**Status:** Production-ready
+## Deliverable
+**File:** `testing/2-security-testing.sh`
+
+**Size:** ~993 lines
+**Language:** Bash 4.0+
+**Executable:** Yes (chmod +x)
 
 ## Test Coverage
 

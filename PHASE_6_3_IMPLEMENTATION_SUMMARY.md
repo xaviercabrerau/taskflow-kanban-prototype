@@ -1,3 +1,5 @@
+**Nota de estado (2026-09-10):** este es un informe histórico (fecha interna "January 20, 2025", presumiblemente un typo de agosto 2026). Verificado contra el código actual: los archivos que este resumen lista como creados — `src/app/api/analytics/dashboard-data/route.ts`, `src/app/api/analytics/export/route.ts`, `src/app/api/cron/daily-digest/route.ts`, `src/app/api/cron/weekly-alert/route.ts`, `src/app/api/cron/monthly-report/route.ts` — no existen en el repositorio actual. La funcionalidad de BI/Grafana descrita nunca se integró a la app; el único cron real configurado en `vercel.json` es `/api/cron/alert-check`. El dashboard real hoy es la página `/dashboard` (`src/components/DashboardView.tsx`), no lo descrito en este documento. Tratar como planificación no ejecutada, no como "Complete".
+
 # Phase 6.3 Implementation Summary: BI & Dashboards
 
 **Date:** January 20, 2025  

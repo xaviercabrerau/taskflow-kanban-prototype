@@ -1,330 +1,224 @@
-# TaskFlow Notification System - Health Check Guide
+# Health Check Guide — TaskFlow
 
-## Overview
+**Status:** executable, verified against production on 2026-09-10.
+This replaces an earlier version that documented `ops/2-health-check-utils.sh`
+as the health-check mechanism. That script probes Redis with `redis-cli`, a
+Gmail service account, Google Cloud Pub/Sub and a BullMQ queue — none of which
+exist in this project — and it depends on `redis-cli` and `gcloud`, which are
+not installed. **The real health checks are HTTP endpoints in the app itself.**
 
-The `2-health-check-utils.sh` script provides comprehensive monitoring and diagnostics for the TaskFlow Notification System. It checks all critical infrastructure components and provides color-coded health status with actionable insights.
+> **Migration note:** `task.conto.ec` and Supabase project `txdyijyswpsalqnwfopc`
+> belong to the **current** accounts. Moving the project:
+> [`MIGRACION.md`](../MIGRACION.md).
 
-## Quick Start
+---
 
-```bash
-# Run full health check
-./2-health-check-utils.sh
+## 1. The endpoints
 
-# Continuous monitoring (ideal for dashboards)
-./2-health-check-utils.sh watch
+| Endpoint | Auth | Answers |
+|---|---|---|
+| `GET /api/health` | none | Is the app up and can it reach Supabase? |
+| `GET /api/health/cron` | none (optional bearer forwarded) | Are the 7 pg_cron jobs fresh? |
+| `GET /api/cron/alert-check` | **`CRON_SECRET`** | Both of the above, and pages `ALERT_WEBHOOK_URL` on failure |
 
-# JSON output for integration with monitoring systems
-./2-health-check-utils.sh json | jq .
+---
 
-# Check specific component only
-./2-health-check-utils.sh check_redis_health
-```
-
-## Features
-
-### Color-Coded Health Status
-- 🟢 **Green (✓)**: Component healthy and responsive
-- 🟡 **Yellow (⚠)**: Component operational but degraded or slow
-- 🔴 **Red (✗)**: Component unavailable or critical issue
-
-### Comprehensive Coverage
-
-| Component | Checks | Thresholds |
-|-----------|--------|-----------|
-| **Redis** | Connection, latency, memory, clients | <50ms healthy, <200ms warning, >200ms critical |
-| **Supabase** | API connectivity, database access | <500ms healthy, <2000ms warning |
-| **Gmail API** | Service account validity, scope verification | N/A (file-based) |
-| **Google Pub/Sub** | Topic existence, subscription count | N/A (existence check) |
-| **BullMQ Queue** | Queue depth, failed jobs, processing jobs | <1000 healthy, <10000 warning |
-| **Notifications DB** | Query latency, table stats, record counts | <500ms healthy |
-
-### Exit Codes
-
-```
-0 = All systems healthy ✓
-1 = Warnings present (operational but degraded)
-2 = Critical issues (service unavailable)
-```
-
-## Configuration
-
-### Required Environment Variables
+## 2. Quick start
 
 ```bash
-# Redis
-export REDIS_URL="redis://:password@host:6379"
+# App + Supabase connectivity
+curl -s https://task.conto.ec/api/health | jq
 
-# Supabase
-export SUPABASE_URL="https://your-project.supabase.co"
-export SUPABASE_ANON_KEY="your-anon-key"
+# pg_cron freshness
+curl -s https://task.conto.ec/api/health/cron | jq
 
-# Gmail API
-export GMAIL_SERVICE_ACCOUNT="/path/to/service-account.json"
-export GOOGLE_CLOUD_PROJECT="your-gcp-project"
-
-# Google Cloud Pub/Sub
-export PUBSUB_TOPIC="projects/your-project/topics/your-topic"
-
-# BullMQ (optional, defaults to "notifications")
-export BULLMQ_QUEUE_NAME="notifications"
+# Just the status codes (for a monitor)
+curl -s -o /dev/null -w '%{http_code}\n' https://task.conto.ec/api/health
+curl -s -o /dev/null -w '%{http_code}\n' https://task.conto.ec/api/health/cron
 ```
 
-### Loading from .env
+Locally, replace the host with `http://localhost:3000` after `npm run dev`.
 
-```bash
-# Create .env.local with your configuration
-source .env.local
-./2-health-check-utils.sh
-```
+---
 
-## Usage Examples
+## 3. `/api/health`
 
-### 1. Daily Automated Health Check
+Source: `src/app/api/health/route.ts`.
 
-```bash
-# Add to crontab for daily 2 AM check
-0 2 * * * /path/to/2-health-check-utils.sh >> /var/log/taskflow-health.log 2>&1
+**What it actually does:** creates an **anon** Supabase client and runs
+`select id from permissions limit 1`, measuring latency.
 
-# Alert on critical issues
-0 2 * * * if ! /path/to/2-health-check-utils.sh > /dev/null; then \
-    mail -s "TaskFlow Health Alert" ops@example.com < /var/log/taskflow-health.log; fi
-```
+Healthy response (HTTP 200) — this is the real shape, confirmed in production:
 
-### 2. Integration with Monitoring Dashboards
-
-```bash
-# Prometheus integration (scrape JSON every 30s)
-curl -s http://localhost:8080/health/json | jq '.services'
-
-# Send to CloudWatch
-./2-health-check-utils.sh json | jq '.services | to_entries[] | 
-  {MetricName: .key, Value: (.value.latency_ms // 0)}'
-```
-
-### 3. Live Monitoring Setup
-
-```bash
-# Terminal 1: Continuous monitoring
-./2-health-check-utils.sh watch
-
-# Terminal 2: Export JSON stream to file for archival
-while true; do 
-  ./2-health-check-utils.sh json >> /var/log/taskflow-health.jsonl
-  sleep 300  # Every 5 minutes
-done
-```
-
-### 4. Component-Specific Debugging
-
-```bash
-# Check only Redis
-./2-health-check-utils.sh check_redis_health
-
-# Check database queries
-./2-health-check-utils.sh check_notifications_db
-
-# Check queue health
-./2-health-check-utils.sh check_bullmq_health
-```
-
-### 5. Monitoring System Integration
-
-**Datadog Agent**:
-```yaml
-# /etc/datadog-agent/conf.d/custom.yaml
-init_config:
-
-instances:
-  - name: taskflow_health
-    command: /path/to/2-health-check-utils.sh json
-    timeout: 15
-    tags:
-      - "service:taskflow"
-      - "component:notification-system"
-```
-
-**Prometheus Push Gateway**:
-```bash
-#!/bin/bash
-RESULTS=$(/path/to/2-health-check-utils.sh json)
-
-# Parse and push metrics
-echo "$RESULTS" | jq -r '.services | to_entries[] | 
-  "taskflow_health_status{service=\"\(.key)\"} \(if .value.status == \"healthy\" then 1 else 0 end)"' | \
-  curl --data-binary @- http://localhost:9091/metrics/job/taskflow
-```
-
-## Understanding the Output
-
-### Text Report
-```
-TaskFlow Notification System - Health Check Report
-2026-08-18 11:29:10
-
-━━━ Checking Redis ━━━
-✓ Connectivity OK (12ms)
-✓ Memory usage: 256.5K
-✓ Connected clients: 5
-...
-
-━━━ SUMMARY ━━━
-Components Checked: 6
-✓ Healthy: 6   
-
-Overall Status: 
-✓ All systems operational
-```
-
-### JSON Report
 ```json
 {
-  "timestamp": "2026-08-18T11:29:10Z",
-  "overall_status": 0,
-  "status_name": "healthy",
-  "services": {
-    "redis": {
-      "status": "healthy",
-      "latency_ms": 12,
-      "message": "Connected"
-    },
-    "supabase": {
-      "status": "healthy",
-      "latency_ms": 245,
-      "message": "Connected"
-    },
-    ...
-  }
+  "status": "ok",
+  "checks": { "supabase": { "ok": true, "latencyMs": 754 } },
+  "timestamp": "2026-09-10T20:27:41.962Z"
 }
 ```
 
-## Performance Thresholds
+Unhealthy (HTTP 503):
 
-### Tuning Thresholds
-
-Edit the constants at the top of the script:
-
-```bash
-# Performance thresholds (milliseconds)
-readonly REDIS_LATENCY_WARN=50
-readonly REDIS_LATENCY_CRITICAL=200
-readonly SUPABASE_LATENCY_WARN=500
-readonly SUPABASE_LATENCY_CRITICAL=2000
-readonly GMAIL_LATENCY_WARN=1000
-readonly GMAIL_LATENCY_CRITICAL=5000
-
-# Queue size thresholds
-readonly BULLMQ_QUEUE_WARN=1000
-readonly BULLMQ_QUEUE_CRITICAL=10000
-readonly BULLMQ_FAILED_WARN=10
-readonly BULLMQ_FAILED_CRITICAL=100
-```
-
-Adjust based on your SLA requirements and expected latencies.
-
-## Troubleshooting
-
-### Command Not Found Errors
-
-If you see "command not found" for `redis-cli`, `curl`, `gcloud`, etc.:
-
-```bash
-# Install required tools
-brew install redis curl      # macOS
-apt-get install redis-tools curl  # Ubuntu/Debian
-
-# Install Google Cloud CLI
-curl https://sdk.cloud.google.com | bash
-```
-
-### Permission Denied
-
-```bash
-# Make script executable
-chmod +x 2-health-check-utils.sh
-
-# Run with bash explicitly
-bash 2-health-check-utils.sh
-```
-
-### Missing Environment Variables
-
-```bash
-# Verify all required variables are set
-env | grep -E "REDIS_URL|SUPABASE|GMAIL|PUBSUB|BULLMQ"
-
-# Load from environment file
-source ~/.env.local
-./2-health-check-utils.sh
-```
-
-### Connection Timeouts
-
-If checks timeout, increase connection timeout:
-- Edit `--connect-timeout` values in the script (default: 5s)
-- Check network connectivity: `ping host`, `curl -I https://api.example.com`
-- Verify credentials are correct in environment variables
-
-## Advanced Configuration
-
-### Custom Health Check
-
-Add your own checks by extending the script:
-
-```bash
-check_custom_service() {
-    local check_name="Custom Service"
-    echo -e "\n${BLUE}━━━ Checking ${check_name} ━━━${NC}"
-    
-    # Your check logic here
-    local status="healthy"  # or "warning"/"critical"
-    local latency=42
-    
-    print_status "OK" "Service responding" "$latency"
-    store_result "custom" "$status" "$latency" "Message"
-    
-    return 0
+```json
+{
+  "status": "error",
+  "checks": { "supabase": { "ok": false, "latencyMs": 1200, "message": "<error>" } },
+  "timestamp": "..."
 }
-
-# Add to full_health_check()
-check_custom_service
 ```
 
-### Alerting Setup
+### 3.1 Why it probes `permissions` and not a real table
+
+`permissions` is a global permission catalog whose `permissions_select` RLS
+policy is `qual = true` — readable by anyone, including anon, because it is a
+static catalog, not tenant data.
+
+Any tenant-scoped table (`organizations`, `boards`, `tasks`, …) would be wrong
+here: their RLS calls `is_org_member()` / `is_org_owner()`, and anon's EXECUTE
+on those functions was deliberately revoked. An anon read now **throws**
+`permission denied for function is_org_member` instead of returning an empty
+array — the probe would report "down" on every request even with Supabase fully
+healthy. PostgREST's own root (`/rest/v1/`) is not a substitute either: it needs
+a secret API key this app never holds.
+
+Do not "improve" this probe by pointing it at application data.
+
+### 3.2 What it does **not** cover
+
+No Resend check, no Upstash check, no Google API check, no pg_cron check (that
+is the other endpoint), no auth-flow check. A green `/api/health` means "Next.js
+is serving and Postgres answers", nothing more.
+
+### 3.3 Safe to poll
+
+The probe is deliberately cheap (one indexed row, anon client, no writes). Any
+uptime-monitor frequency is fine.
+
+---
+
+## 4. `/api/health/cron`
+
+Source: `src/app/api/health/cron/route.ts`.
+
+**What it actually does:** calls the `get_cron_health()` SECURITY DEFINER RPC,
+which reads `cron.job_run_details` inside Postgres and returns status for only
+the hardcoded job names. The `cron` schema is not exposed by PostgREST and anon
+cannot read it directly — the RPC is the supported path. A service-role key is
+deliberately **not** used here: it would bypass every RLS policy in the project
+to read a handful of rows.
+
+Healthy response (HTTP 200):
+
+```json
+{
+  "status": "ok",
+  "jobs": [
+    { "jobName": "purge-expired-audit-logs", "expectedInterval": "daily",
+      "lastRunAt": "2026-09-10T03:00:00.090662+00:00",
+      "lastStatus": "succeeded", "isStale": false }
+  ],
+  "timestamp": "..."
+}
+```
+
+`"status"` is `"degraded"` with HTTP **503** when any job is stale or its last
+status is `failed`. On RPC failure the response is `"error"` + a `hint` + the
+job list with `"status":"unknown"`.
+
+The 7 monitored jobs (`src/lib/cron-jobs.ts`, `MONITORED_JOBS`):
+
+| Job | Expected |
+|---|---|
+| `taskflow_check_due_soon_tasks` | hourly |
+| `taskflow_execute_due_date_automations` | hourly |
+| `taskflow_execute_sla_automations` | hourly |
+| `taskflow_execute_recurring_tasks` | hourly |
+| `purge-expired-audit-logs` | daily (~03:00 UTC) |
+| `record-daily-metrics-snapshots` | daily (~03:10 UTC) |
+| `taskflow_resolve_crm_sync_responses` | every minute |
+
+This list must stay in sync with `monitored_jobs` inside `get_cron_health()`
+(`supabase/migrations/20260903200000_audit_fase_a_security_fixes.sql`). A job
+present in `cron.job` but absent from both lists is invisible to monitoring —
+that already happened once with `taskflow_execute_recurring_tasks`.
+
+### 4.1 Authentication note
+
+The handler forwards any `Authorization` header it receives, from when the RPC
+was granted to `authenticated` only. A later migration
+(`20260810235939_grant_cron_health_to_anon.sql`) also granted `anon`, for the
+benefit of `/api/cron/alert-check`. **So this endpoint now works with no
+Authorization header at all** — the forwarding is a convenience, not an access
+boundary. Accepted tradeoff: the data is whether seven non-secret job names are
+stale.
+
+### 4.2 Expected false positive
+
+A freshly restored or newly deployed database reports `degraded` until each job
+has run once. Wait one cycle before escalating.
+
+---
+
+## 5. `/api/cron/alert-check`
+
+Source: `src/app/api/cron/alert-check/route.ts`. Scheduled by `vercel.json` —
+**the only Vercel cron in the project** — at `0 8 * * *` (daily, 08:00 UTC).
+
+Auth: `Authorization: Bearer <CRON_SECRET>`, or `?secret=<CRON_SECRET>` when the
+header is absent. The query-param fallback exists because many free-tier uptime
+monitors cannot send custom headers. Anything else → 401.
 
 ```bash
-#!/bin/bash
-# health-check-alert.sh
-
-STATUS=$(/path/to/2-health-check-utils.sh)
-EXIT_CODE=$?
-
-if [[ $EXIT_CODE -eq 2 ]]; then
-    # Send critical alert
-    slack_alert "🚨 TaskFlow critical issues: $(echo "$STATUS" | grep "✗")"
-    pagerduty_trigger "TaskFlow Notification System Critical"
-elif [[ $EXIT_CODE -eq 1 ]]; then
-    # Send warning
-    slack_alert "⚠️ TaskFlow warnings: $(echo "$STATUS" | grep "⚠")"
-fi
+curl -s -H "Authorization: Bearer $CRON_SECRET" \
+  https://task.conto.ec/api/cron/alert-check | jq
+# {"ok":true,"problems":[],"alerted":false,"timestamp":"..."}
 ```
 
-## Best Practices
+It returns 200 normally and **503 only when there were problems and the webhook
+POST also failed**. So a 200 does not by itself mean "healthy" — read
+`problems`.
 
-1. **Baseline Your Metrics**: Run the health check continuously for 24-48 hours to establish normal latency baselines
-2. **Implement Alerting**: Integrate with your monitoring system (Datadog, New Relic, Prometheus)
-3. **Archive Results**: Store JSON output for trend analysis and capacity planning
-4. **Regular Reviews**: Check alerts and logs weekly for patterns
-5. **Load Test Before Adjusting**: Before changing thresholds, load test to understand what's normal for your system
+---
 
-## Monitoring System Integration
+## 6. Wiring an external monitor
 
-See `/ops/1-monitoring-alerts.yaml` for Datadog, CloudWatch, and other integrations.
+Nothing else in the project watches these endpoints between the daily cron runs.
+Minimum useful setup, no new code required:
 
-See `/ops/3-runbooks.md` for incident response procedures.
+| Target | Frequency | Alert when |
+|---|---|---|
+| `https://task.conto.ec/api/health` | 1–5 min | status ≠ 200 |
+| `https://task.conto.ec/` | 5 min | status ≠ 200 |
+| `https://task.conto.ec/api/health/cron` | 15–60 min | status ≠ 200 |
+| `https://task.conto.ec/api/cron/alert-check?secret=<CRON_SECRET>` | hourly | status ≠ 200 |
 
-## Support
+Put the secret in the monitor's own secret storage. Never in a repo, a
+dashboard description or this file.
 
-For issues or questions:
-- Check `/ops/MONITORING_GUIDE.md` for broader monitoring strategy
-- Review `/ops/8-performance-monitoring.sh` for detailed metrics
-- See commit history for recent changes: `git log --oneline ops/`
+---
+
+## 7. About `ops/2-health-check-utils.sh` and `ops/health-check-setup.sh`
+
+Both are **legacy and not executable in this environment.** They assume
+`redis-cli`, `gcloud`, a BullMQ queue and a Gmail service account, and they read
+env vars (`REDIS_URL`, `GMAIL_SERVICE_ACCOUNT`, `PUBSUB_TOPIC`,
+`BULLMQ_QUEUE_NAME`) that this project does not define. They are kept only as
+historical artifacts. **Use the curl commands above instead.** If a shell
+wrapper is ever wanted, it should be rewritten around these three endpoints.
+
+---
+
+## 8. References
+
+* `src/app/api/health/route.ts`, `src/app/api/health/cron/route.ts`
+* `src/app/api/cron/alert-check/route.ts`
+* `src/lib/cron-jobs.ts`
+* `vercel.json`
+* `ops/HEALTH_CHECK_SUMMARY.md` — one-page summary of this guide
+* `ops/3-runbooks.md` §2 (triage), §4 (cron stale)
+* [`MIGRACION.md`](../MIGRACION.md)
+
+---
+
+**Last verified against production:** 2026-09-10

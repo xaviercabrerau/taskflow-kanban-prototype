@@ -11,6 +11,13 @@
 
 TaskFlow es una aplicación de gestión de proyectos y tableros Kanban, operada por CONTO ("TaskFlow", "nosotros"), con domicilio en Puerto Santa Ana, Edificio The Point, Guayaquil, Ecuador. Puedes contactarnos en info@conto.ec.
 
+**[COMPLETAR: razón social exacta y RUC de la entidad legal que opera TaskFlow, y representante legal — no pudieron verificarse contra ninguna fuente disponible en este repositorio; el equipo legal/administrativo debe confirmarlos antes de publicar este documento.]**
+
+> **Nota de migración:** el dominio de producción (`task.conto.ec`, usado en
+> otras secciones de este documento y en la Política de Privacidad)
+> corresponde a la cuenta actual. Si el proyecto se migra a otra cuenta, ver
+> [`MIGRACION.md`](MIGRACION.md).
+
 TaskFlow es un servicio **multi-tenant**: cada organización que se registra ("tu organización", "tu workspace") tiene su propio espacio aislado de datos (tableros, tareas, comentarios, miembros, registros de auditoría, etc.), separado técnicamente del de otras organizaciones mediante controles de acceso a nivel de base de datos (Row Level Security).
 
 TaskFlow está pensado para que **organizaciones inviten a sus propios miembros** (equipos, colaboradores, clientes invitados puntualmente). No es una plataforma de acceso público ni recolecta datos de visitantes anónimos fuera del flujo de registro/invitación.

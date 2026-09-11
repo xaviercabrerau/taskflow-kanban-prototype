@@ -1,114 +1,179 @@
-# User Management System
+# User Management
 
-## Overview
+**Last verified against the code:** 2026-09-09 (`src/app/api/admin/**/route.ts`,
+`src/lib/supabase/members-repo.ts`, `supabase/migrations/`).
 
-TaskFlow's user management system allows organization owners to manage team members, assign roles, and control access. The system is built on Supabase Auth with role-based access control (RBAC) scoped to boards and organizations.
+How users are created, given permissions, edited and removed in TaskFlow. Full
+request/response detail for each endpoint is in
+[`API_ENDPOINTS.md`](./API_ENDPOINTS.md); the authorization model behind it is in
+[`ARCHITECTURE.md`](./ARCHITECTURE.md#org_role-vs-rbac-two-separate-systems).
 
-## Features
+---
 
-- **Create Users**: Direct creation with email/password or invite existing Supabase accounts
-- **User Roles**: Admin (organization-level) and Member roles
-- **Last-Admin Protection**: Prevents deletion of the last admin in an organization
-- **Password Management**: Reset passwords and force password changes
-- **Organization Scoping**: All operations scoped to the requesting user's organization
+## 1. The one thing to understand first
 
-## Quick Start
+**Creating a user is two grants, not one.**
 
-### Access Admin Panel
+1. `organization_members.org_role` — makes the user a member of the organization and
+   determines *administrative* rights (`owner` \| `admin` \| `member` \| `guest`).
+2. `role_assignments` — the RBAC system, one row **per board**, that grants *content*
+   permissions (`task.create`, `task.update`, …). RLS policies check this, via
+   `has_permission(board_id, key)`.
 
-1. Log in to TaskFlow
-2. Navigate to `/admin` (organization owners only)
-3. Select the "Usuarios" (Users) tab
+They are **separate systems**. `org_role = 'admin'` does **not** grant `task.create`. A
+user created with a membership but no `role_assignments` rows can log in, see the board,
+and silently fail to change anything — RLS filters the mutation out with no error.
 
-### Create a New User
+Every creation path in the codebase therefore writes both. If you add a new one, it must
+too.
 
-**Option A: Create from Scratch**
+System roles (seeded, `is_system = true`, `tenant_id = null`):
 
-1. Click "Crear Usuario" (Create User)
-2. Enter email, full name, and password
-3. Select role (Admin or Member)
-4. Click Create
-5. Share credentials with the new user securely
+| Role | Permissions |
+|---|---|
+| Admin | all |
+| Manager | `task.create`, `task.update`, `task.delete`, `board.manage`, `member.invite` |
+| Contribuyente | `task.create`, `task.update` |
+| Solo Lectura | none (read-only by design) |
 
-**Option B: Invite Existing Account**
+---
 
-If the email already has a Supabase account (e.g., abandoned signup):
+## 2. Creating users
 
-1. Try creating with the email
-2. If error occurs, use "Link Existing User" flow
-3. Email will be added to your organization
+All creation endpoints require a Supabase session **and** `org_role = 'owner'` on the
+caller's `organization_members` row (`403` otherwise), plus
+`SUPABASE_SERVICE_ROLE_KEY` + `NEXT_PUBLIC_SUPABASE_URL` on the server (`500` otherwise).
+They all use a service-role client, because creating an auth account and writing another
+user's `profiles` row are impossible with the ordinary RLS-bound client.
 
-### Manage Users
+### `POST /api/admin/users` — the admin UI path (`/admin/usuarios`)
 
-| Action | How |
-|--------|-----|
-| View all users | "Usuarios" tab lists all members |
-| Update user name | Click user → edit → save |
-| Change role | Click user → select new role → save |
-| Remove user | Click delete icon (not allowed if last admin) |
-| Reset password | Use `/api/admin/reset-password` endpoint |
+This is what the "Crear usuario" dialog calls. It:
 
-## Role Model
+1. Creates a **real Supabase Auth account** with `auth.admin.createUser()`,
+   `email_confirm: true`, and a **server-generated temporary password**, with
+   `user_metadata.must_change_password = true`.
+2. Inserts the `organization_members` row. The dialog's three roles map to
+   `org_role` as: `admin` → `admin`, `viewer` → `guest`, anything else → `member`
+   (the column's check constraint only allows `owner`/`admin`/`member`/`guest`).
+3. Updates `profiles.full_name` with the service-role client.
+4. **Grants the system role "Contribuyente" on every board of the tenant**, by inserting
+   one `role_assignments` row per board. This endpoint exposes no RBAC role selector, so
+   "Contribuyente" is always the default — without it, nothing the user was just given
+   would let them create a task.
+5. Returns the generated temporary password in the response body, plus a `warning` field
+   if the role assignment could not be written ("…asígnalo manualmente desde Roles y
+   permisos").
 
-| Role | Can create users | Can manage users | Can delete users | Can reset passwords |
-|------|------------------|------------------|------------------|---------------------|
-| Owner | ✓ | ✓ | ✓ | ✓ |
-| Admin | × | ✗ | ✗ | ✗ |
-| Member | × | ✗ | ✗ | ✗ |
+> Historical note: this endpoint used to *simulate* creation — it generated a password,
+> returned `200`, and never called Supabase Auth. Users created from `/admin/usuarios`
+> did not exist and login failed with "Invalid login credentials". It now creates the
+> account for real. Any documentation describing this endpoint as a stub is obsolete.
 
-**Note:** Currently, UI only allows owners to perform admin actions. API enforces this with `org_role !== 'owner'` checks.
+### `POST /api/admin/create-user` — explicit password + explicit RBAC role
 
-## Database Schema
+Same shape, but the caller supplies the password (minimum 8 characters) and may pass a
+`roleId`. `orgRole` accepts only `admin` or `member` (`400` otherwise). The `roleId` is
+validated to belong to the organization or to be a system role
+(`tenant_id = org OR tenant_id IS NULL`) before one `role_assignments` row per board is
+inserted. Role-assignment failures come back as `warning`, not as an error — the user is
+already created.
 
-### Key Tables
+### `POST /api/admin/link-existing-user` — attach an account that already exists
 
-- **auth.users**: Supabase Auth users (email, password hashes)
-- **profiles**: User profile data (id, email, full_name)
-- **organization_members**: User-to-organization mapping with roles
-- **role_assignments**: RBAC per board (tenant_id, user_id, role_id, scope_type, scope_id)
+For an email that already has a Supabase Auth account (an abandoned signup, or a user
+from another organization). It looks the account up by paging
+`auth.admin.listUsers({ perPage: 200 })`, optionally sets a new password, inserts the
+`organization_members` row, and assigns `role_assignments` exactly as above.
+`404` if no account with that email exists; `409` if it is already a member of this
+organization.
 
-### Relationships
+### `inviteMemberByEmail()` (`src/lib/supabase/members-repo.ts`)
 
-```
-auth.users (1) ------ (M) organization_members
-                      |
-                      +---- (1) profiles (same user_id)
+The invite path used from the board UI follows the same rule: membership **plus**
+"Contribuyente" on the tenant's boards.
 
-organization_members (1) ------ (M) role_assignments
-```
+---
 
-## Error Handling
+## 3. Reading and editing users
 
-| Scenario | Response |
-|----------|----------|
-| Not authenticated | 401 Unauthorized |
-| Not an owner | 403 Forbidden |
-| Email already exists in org | 409 Conflict |
-| Last admin deletion attempt | 409 Conflict |
-| Missing required fields | 400 Bad Request |
-| Server error | 500 Internal Server Error |
+| Endpoint | Behavior |
+|---|---|
+| `GET /api/admin/users` | Lists the caller's organization members. Any member may call it — no owner check. Members and profiles are fetched in **two separate queries**; a PostgREST embed is impossible because `organization_members.user_id` and `profiles.id` both reference `auth.users` with no direct FK between them. `status`, `lastLogin` and `assignedClientIds` in the response are hardcoded placeholders backed by no column. |
+| `GET /api/admin/users/[id]` | Single member of the caller's organization. `404` if not a member. |
+| `PUT /api/admin/users/[id]` | Owner only. Updating `name` writes `profiles.full_name` **with the service-role client**; updating `role` writes `organization_members.org_role` with the ordinary client. |
+| `DELETE /api/admin/users/[id]` | Owner only. Refuses with `409` when the target is the last remaining `owner`/`admin` of the organization. |
+| `POST /api/admin/reset-password` | Owner only. Verifies the target belongs to the caller's organization (`403` otherwise), then `auth.admin.updateUserById()`. Minimum 8 characters; optionally sets `must_change_password`. |
 
-## Configuration
+### Why name and role behave differently
 
-Required environment variables (backend only):
+This asymmetry is the single most confusing thing in this area, and it comes straight
+from RLS:
 
-```bash
-NEXT_PUBLIC_SUPABASE_URL=https://your-project.supabase.co
-NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJ...
-SUPABASE_SERVICE_ROLE_KEY=eyJ...  # Only for create/link/reset operations
-```
+- `profiles` has only `profiles_update_own` (`id = auth.uid()`). An owner editing
+  **another** user's name with the ordinary client updates **0 rows and returns no
+  error** — the UI would show success while nothing changed. Hence the service-role
+  client.
+- `organization_members` has `org_members_update using (is_org_owner(organization_id))`.
+  An owner **can** update another member's `org_role` with the ordinary client.
 
-## Security Notes
+---
 
-- All endpoints require authentication
-- Organization membership is enforced — owners can only manage their organization's members
-- Service role key (SUPABASE_SERVICE_ROLE_KEY) is required for account creation and password resets
-- Never expose service role key to the client
-- Passwords are never returned in responses after creation
+## 4. Roles UI
 
-## Support
+`/admin/roles` manages the RBAC side: roles, their permissions, and assignments. Use it
+when a user was created outside the flows above, or when a creation endpoint returned
+the "no se pudo asignar el rol" warning. Assigning a role there writes the same
+per-board `role_assignments` rows.
 
-For issues or questions, refer to:
-- [API Endpoints Documentation](./API_ENDPOINTS.md)
-- [Architecture Guide](./ARCHITECTURE.md)
-- [Testing Guide](./TESTING.md)
+---
+
+## 5. Error reference
+
+| Status | Cause |
+|---|---|
+| `400` | Missing/invalid fields; password under 8 characters; invalid `orgRole`; `roleId` not belonging to the organization; Supabase Auth rejected the creation (e.g. email already registered) |
+| `401` | No valid Supabase session |
+| `403` | Caller is not in any organization, is not `owner`, or the target user belongs to another organization |
+| `404` | User/account does not exist |
+| `409` | Already a member of this organization; or last-admin deletion refused |
+| `500` | `SUPABASE_SERVICE_ROLE_KEY` / `NEXT_PUBLIC_SUPABASE_URL` missing, or a database error |
+
+The `500` for a missing service-role key is partial: `GET`/list endpoints keep working,
+so the failure looks intermittent. Message: *"El servidor no tiene configurado
+SUPABASE_SERVICE_ROLE_KEY…"*.
+
+---
+
+## 6. Known limits
+
+- `link-existing-user` finds accounts by paging `listUsers` at 200 per page — linear in
+  the size of the auth user base.
+- Several handlers resolve the caller's membership with
+  `.eq("user_id", …).maybeSingle()`, which assumes one membership per user.
+  `organization_members` is `UNIQUE(organization_id, user_id)`, so a user *can* belong to
+  several organizations; that assumption breaks the first time one does.
+- Membership data is not cached; every request re-queries it (which is also what makes
+  permission changes take effect immediately).
+
+---
+
+## 7. Checklist for new user-management work
+
+- [ ] Filter every query by `organization_id`, not just `user_id`
+- [ ] Enforce `org_role = 'owner'` on mutations
+- [ ] Write **both** `organization_members` and `role_assignments` when creating a user
+- [ ] Use the service-role client for anything touching another user's `profiles` row or
+      `auth.users`
+- [ ] Handle the missing-service-role-key case explicitly
+- [ ] Test with two organizations, and with the last-admin edge case
+- [ ] Add tests covering the 401 / 403 / 409 paths
+
+---
+
+## See also
+
+- [`API_ENDPOINTS.md`](./API_ENDPOINTS.md) — per-endpoint request/response reference
+- [`ARCHITECTURE.md`](./ARCHITECTURE.md#org_role-vs-rbac-two-separate-systems) — `org_role` vs RBAC, RLS details
+- [`AUDIT_LOGGING.md`](./AUDIT_LOGGING.md) — what gets recorded
+- [`MIGRACION.md`](../MIGRACION.md) — moving users to another Supabase account

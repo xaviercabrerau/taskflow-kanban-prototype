@@ -4,6 +4,29 @@ This document tracks what monitoring/observability scaffolding exists in this
 repo today, and what still needs a human to wire up real credentials before
 any of it is actually "live."
 
+> **Nota (2026-09-10):** este documento distingue dos mecanismos de "cron"
+> que se confunden fácilmente porque comparten nombre:
+> - **Vercel Cron** — configurado en `vercel.json`, en la raíz del repo.
+>   Hay **un solo cron** definido ahí: `/api/cron/alert-check`, diario a
+>   las 08:00 UTC (`0 8 * * *`). Es una petición HTTP programada por Vercel.
+> - **`pg_cron`** — jobs que corren **dentro de Postgres** (Supabase), no en
+>   Vercel. Hay **7 jobs** definidos hoy, listados en `src/lib/cron-jobs.ts`
+>   (`MONITORED_JOBS`, la fuente única de verdad) y monitoreados por la RPC
+>   `get_cron_health()`: `taskflow_check_due_soon_tasks`,
+>   `taskflow_execute_due_date_automations`, `taskflow_execute_sla_automations`,
+>   `taskflow_execute_recurring_tasks` (los cuatro por hora),
+>   `purge-expired-audit-logs`, `record-daily-metrics-snapshots` (diarios), y
+>   `taskflow_resolve_crm_sync_responses` (cada minuto, agregado en
+>   `supabase/migrations/20260904000000_crm_generic_adapter.sql` junto con la
+>   versión de `get_cron_health()` que ya lo incluye).
+>
+> Section 2 de este documento describe el monitoreo de los jobs de
+> `pg_cron`; la sección 3 describe el único cron de Vercel.
+>
+> **Nota de migración:** este documento menciona el dominio de producción
+> actual (`task.conto.ec`). Si el proyecto se migra a otra cuenta, ver
+> [`MIGRACION.md`](MIGRACION.md).
+
 ## What's in place
 
 ### 1. Application health check — `GET /api/health`
@@ -29,18 +52,30 @@ request even when Supabase is fully healthy.
 
 ### 2. Cron job health check — `GET /api/health/cron`
 
-`src/app/api/health/cron/route.ts` reports the health of the four active
-`pg_cron` jobs (`taskflow_check_due_soon_tasks`, `taskflow_execute_due_date_automations`,
-`purge-expired-audit-logs`, `record-daily-metrics-snapshots` — these are the
-real `jobname` values in `cron.job`, not the names of the SQL functions they
-call) by calling a `get_cron_health()` Postgres RPC and flagging any job
-whose most recent run is older than its expected schedule window (2h for the
-hourly jobs, 26h for the daily ones) or whose last run failed.
+`src/app/api/health/cron/route.ts` reports the health of the **7 active
+`pg_cron` jobs** (`taskflow_check_due_soon_tasks`,
+`taskflow_execute_due_date_automations`, `taskflow_execute_sla_automations`,
+`taskflow_execute_recurring_tasks`, `purge-expired-audit-logs`,
+`record-daily-metrics-snapshots`, `taskflow_resolve_crm_sync_responses` — these
+are the real `jobname` values in `cron.job`, not the names of the SQL
+functions they call; the canonical list lives in `src/lib/cron-jobs.ts`
+as `MONITORED_JOBS`) by calling a `get_cron_health()` Postgres RPC and
+flagging any job whose most recent run is older than its expected schedule
+window (2h for the hourly jobs, 26h for the daily ones, 10min for the
+per-minute CRM sync job) or whose last run failed.
+
+**These are `pg_cron` jobs running inside Postgres — a separate mechanism
+from the single Vercel Cron entry in `vercel.json`** (`/api/cron/alert-check`,
+see section 3). Do not conflate the two: this section is about the 7
+Postgres-side jobs; section 3 is about the one Vercel-side HTTP cron.
 
 The `get_cron_health()` RPC (`supabase/migrations/20260810231215_cron_health_rpc.sql`,
 corrected in `20260810231315_fix_cron_health_rpc_job_names.sql` after the
-first version shipped with the wrong job names) has been **applied to the
-live database and verified**: as of this writing all four jobs report
+first version shipped with the wrong job names, and since extended twice —
+`20260903200000_audit_fase_a_security_fixes.sql` added
+`taskflow_execute_recurring_tasks`, `20260904000000_crm_generic_adapter.sql`
+added `taskflow_resolve_crm_sync_responses`) has been **applied to the
+live database and verified**: as of this writing all 7 jobs report
 `succeeded` and none are stale.
 
 **This endpoint still requires one thing a human must do:**
@@ -56,7 +91,7 @@ live database and verified**: as of this writing all four jobs report
 
 We deliberately did **not** use a `SUPABASE_SERVICE_ROLE_KEY` for this. A
 service-role key bypasses every RLS policy in the project; shipping one to a
-Vercel serverless function just to read four rows of cron history trades a
+Vercel serverless function just to read a handful of rows of cron history trades a
 narrow, well-scoped read for a credential that can read/write everything.
 The `SECURITY DEFINER` RPC keeps the elevated privilege inside Postgres,
 scoped to exactly this query.
@@ -87,14 +122,14 @@ Supabase call is made.
 route since there's no signed-in user in a cron-triggered request. Because
 this whole route is already gated by `CRON_SECRET` at the HTTP layer, we
 made a deliberate tradeoff: also grant `anon` EXECUTE on `get_cron_health()`.
-The data it returns (whether 4 known, non-secret job names are stale) is
+The data it returns (whether the 7 known, non-secret job names are stale) is
 low-sensitivity, and access to it is already gated one layer up by
 `CRON_SECRET`. This grant lives in
 `supabase/migrations/20260810235939_grant_cron_health_to_anon.sql`.
 
 **This migration has been applied to the live database and verified**:
 `get_cron_health()` now returns real data when called as `anon`, matching
-the four jobs' actual status (see section 2 above — all currently healthy).
+the 7 jobs' actual status (see section 2 above — all currently healthy).
 
 **Alerting**: if either check finds a problem, and `ALERT_WEBHOOK_URL` is
 set, the route POSTs `{"text": "...", "content": "..."}` (both keys, same
@@ -379,6 +414,17 @@ for local dev, etc.):
    history or for alerting on Postgres-level errors (slow queries,
    connection exhaustion, RLS denials at scale) that never surface as an
    application-level exception.
+
+   **Nota (2026-09-10):** `config/grafana/` (provisioning) y
+   `config/prometheus/` (`prometheus.yml`), junto con
+   `docker-compose.grafana.yml` en la raíz, son **configuración de ejemplo
+   para un stack self-hosted opcional** — no hay ningún Grafana ni
+   Prometheus corriendo hoy contra el proyecto en producción. Ningún
+   servicio de Datadog está contratado ni integrado tampoco: si algún otro
+   documento del repo los describe como operativos, está desactualizado.
+   Lo único de observabilidad realmente activo hoy es lo descrito en las
+   secciones 1-6 de este documento (health checks, el cron de Vercel, los
+   7 jobs de `pg_cron`, y Sentry una vez que se le configure el DSN).
 3. **The scheduled caller and webhook are now built** (`/api/cron/alert-check`,
    see section 3 above) — what's left is purely account/config work a human
    must do, since none of it can be guessed blind:

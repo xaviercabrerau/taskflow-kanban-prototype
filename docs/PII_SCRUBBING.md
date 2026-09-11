@@ -1,8 +1,44 @@
 # PII Scrubbing & Data Sanitization Guide
 
-**Status:** Implementation Guide v1.0  
-**Last Updated:** 2026-08-18  
-**Maintainer:** Security & Compliance Team
+> ## ⚠️ REFERENCE GUIDE — NOT IMPLEMENTED
+>
+> **Verified against the code on 2026-09-10: there is no PII scrubbing layer in
+> this project.** Concretely:
+>
+> - No `beforeSend` / `beforeSendTransaction` hook exists. `sentry.server.config.ts`,
+>   `sentry.edge.config.ts` and `sentry.client.config.ts` each contain only
+>   `Sentry.init({ dsn, tracesSampleRate: 0.1 })`.
+> - There is no scrubbing/redaction module anywhere in `src/`. No regex registry,
+>   no `[EMAIL]` / `[PHONE]` replacement, no allow/deny field lists.
+> - No test in the suite (15 suites / 215 tests) covers scrubbing.
+>
+> The only sanitization function that actually exists is `sanitizeForEmail` in
+> `src/lib/emails/utils.ts` — that is **HTML escaping for email templates** (an
+> injection defence), not PII removal, and it is unrelated to logs or error
+> reports.
+>
+> Everything below — the pattern registry, replacement tokens, test cases and
+> compliance mappings — is a **design reference** for scrubbing that has never
+> been built. Do not cite it as evidence of GDPR/CCPA/HIPAA controls, and do not
+> assume error reports reaching Sentry are scrubbed. They are not.
+>
+> **What does limit PII exposure today** (real, verified):
+>
+> - Sentry's SDK default is `sendDefaultPii: false`, so the SDK does not attach
+>   request bodies, cookies or user IP on its own. This is a library default, not
+>   a project control — it is not asserted anywhere in this repo's config.
+> - `src/lib/api-v1/auth.ts` (`safeApiError`) and `/api/mcp` (`safeToolError`)
+>   deliberately return generic messages instead of raw Postgres error text.
+> - `deriveRateLimitKey` in `src/lib/rate-limit.ts` stores only a SHA-256 hash of
+>   a bearer token; the raw token is never logged.
+> - Sentry is optional: with `SENTRY_DSN` / `NEXT_PUBLIC_SENTRY_DSN` unset,
+>   `Sentry.init` silently no-ops and nothing leaves the deployment.
+>
+> If scrubbing is adopted, the smallest real starting point is a `beforeSend` in
+> the three `sentry.*.config.ts` files. See [`SENTRY_SETUP.md`](./SENTRY_SETUP.md).
+
+**Status:** design reference — **not implemented**
+**Last verified against the code:** 2026-09-10
 
 ---
 
