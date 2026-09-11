@@ -6,6 +6,11 @@ Este documento es el procedimiento completo para mover TaskFlow desde las
 cuentas actuales (GitHub / Vercel / Supabase / servicios auxiliares) a otras
 cuentas distintas, sin perder datos ni dejar el servicio roto a medias.
 
+> ¿Buscas cambiar de cuenta de **Claude** (memoria, historial de sesión,
+> conexiones MCP) para seguir trabajando en este mismo proyecto? Eso es una
+> migración distinta e independiente de esta — ver
+> [`MIGRACION_CUENTA_CLAUDE.md`](MIGRACION_CUENTA_CLAUDE.md).
+
 Los valores que aparecen aquí son los **reales de la instalación actual**. Al
 migrar, cada uno se reemplaza por su equivalente en la cuenta destino.
 
