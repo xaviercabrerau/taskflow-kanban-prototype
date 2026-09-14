@@ -17,4 +17,5 @@ export const MONITORED_JOBS = [
   // (crm_sync, 20260904000000_crm_generic_adapter.sql) — corre cada minuto
   // porque vive en pg_cron (Postgres), no en el cron de Vercel.
   { name: "taskflow_resolve_crm_sync_responses", schedule: "every_minute" },
+  { name: "record-sprint-burndown-snapshots", schedule: "daily" },
 ] as const;
