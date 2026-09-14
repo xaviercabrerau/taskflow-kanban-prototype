@@ -24,6 +24,17 @@ function memberLabel(member: OrgMember): string {
   return member.fullName || member.email || member.userId;
 }
 
+// Mismas etiquetas en español que las <option> literales del select de
+// prioridad más abajo (#priority) — no existe un objeto PRIORITY_LABEL
+// reutilizable en este archivo, así que se define uno pequeño solo para el
+// texto del chip de sugerencia.
+const PRIORITY_DISPLAY: Record<Priority, string> = {
+  low: "Baja",
+  medium: "Media",
+  high: "Alta",
+  urgent: "Urgente",
+};
+
 interface TaskModalProps {
   mode: "create" | "edit";
   initial?: Task;
@@ -73,6 +84,9 @@ export default function TaskModal({
   const [aiText, setAiText] = useState("");
   const [aiParsing, setAiParsing] = useState(false);
   const [aiError, setAiError] = useState<string | null>(null);
+
+  const [suggestion, setSuggestion] = useState<{ priority: Priority; assigneeName: string | null } | null>(null);
+  const [suggestionDismissed, setSuggestionDismissed] = useState(false);
 
   const [newSubtaskTitle, setNewSubtaskTitle] = useState("");
 
@@ -131,6 +145,34 @@ export default function TaskModal({
   // TaskShareSection.tsx/TaskChecklistSection.tsx/
   // TaskAttachmentsSection.tsx/TaskTagsSection.tsx/TaskActivitySection.tsx/
   // TaskCommentsSection.tsx (Tarea 9 del plan de 2026-09-04).
+
+  // Sugerencia de prioridad/responsable por IA: solo en modo creación, con
+  // un título de al menos 3 caracteres, tras 600ms sin que el usuario siga
+  // escribiendo. Es puramente opcional — cualquier error o 501 (sin IA
+  // configurada) se ignora en silencio, nunca interrumpe la creación de la
+  // tarea (Tarea 7 del plan 2026-09-13).
+  useEffect(() => {
+    if (mode !== "create" || !tenantId || !activeBoardId || title.trim().length < 3) {
+      setSuggestion(null);
+      return;
+    }
+    setSuggestionDismissed(false);
+    const timer = setTimeout(async () => {
+      try {
+        const res = await fetch("/api/tasks/suggest", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ title: title.trim(), boardId: activeBoardId, tenantId }),
+        });
+        if (!res.ok) return; // 501 (sin IA configurada) u otro error: no mostrar nada.
+        const json = await res.json();
+        setSuggestion(json);
+      } catch {
+        // Silencioso — es una sugerencia opcional, no debe interrumpir la creación de la tarea.
+      }
+    }, 600);
+    return () => clearTimeout(timer);
+  }, [title, mode, tenantId, activeBoardId]);
 
   async function handleAiParse() {
     if (!aiText.trim() || !tenantId || aiParsing) return;
@@ -341,6 +383,30 @@ export default function TaskModal({
               </select>
             </div>
           </div>
+          {suggestion && !suggestionDismissed && (
+            <div className="field" style={{ background: "var(--surface-2)", padding: 8, borderRadius: 6, fontSize: 12.5 }}>
+              <span>
+                ✨ Sugerencia: prioridad {PRIORITY_DISPLAY[suggestion.priority]}
+                {suggestion.assigneeName ? `, asignar a ${suggestion.assigneeName}` : ""}
+              </span>
+              <div style={{ display: "flex", gap: 8, marginTop: 6 }}>
+                <button
+                  type="button"
+                  className="btn"
+                  onClick={() => {
+                    setPriority(suggestion.priority);
+                    if (suggestion.assigneeName) setAssignee(suggestion.assigneeName);
+                    setSuggestionDismissed(true);
+                  }}
+                >
+                  Usar
+                </button>
+                <button type="button" className="btn" onClick={() => setSuggestionDismissed(true)}>
+                  Descartar
+                </button>
+              </div>
+            </div>
+          )}
           <div className="field-row">
             <div className="field">
               <label htmlFor="tag">Etiqueta</label>

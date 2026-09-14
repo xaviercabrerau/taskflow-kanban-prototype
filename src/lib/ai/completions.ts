@@ -92,3 +92,41 @@ export async function summarizeComments(credential: AiCredential, comments: stri
   const summary = await complete(credential, SUMMARIZE_SYSTEM_PROMPT, joined);
   return summary.trim();
 }
+
+export interface SuggestedTaskFields {
+  priority: "low" | "medium" | "high" | "urgent";
+  assigneeName: string | null;
+}
+
+const SUGGEST_SYSTEM_PROMPT = `Basándote en el historial de tareas recientes de este tablero (título, prioridad y responsable de cada una), sugiere la prioridad y el responsable más probable para una tarea nueva con el título dado.
+Responde ÚNICAMENTE con JSON válido, sin markdown, con esta forma exacta:
+{"priority": "low"|"medium"|"high"|"urgent", "assigneeName": "nombre exacto de un responsable visto en el historial"|null}
+Si no hay suficiente historial para sugerir un responsable con confianza, usa null. Nunca inventes un nombre que no aparezca en el historial.`;
+
+export async function suggestTaskFields(
+  credential: AiCredential,
+  newTaskTitle: string,
+  recentTasks: { title: string; priority: string; assignee: string }[]
+): Promise<SuggestedTaskFields> {
+  const historyText = recentTasks
+    .map((t) => `- "${t.title}" | prioridad: ${t.priority} | responsable: ${t.assignee}`)
+    .join("\n");
+  const userPrompt = `Historial del tablero:\n${historyText}\n\nTítulo de la tarea nueva: "${newTaskTitle}"`;
+  const raw = await complete(credential, SUGGEST_SYSTEM_PROMPT, userPrompt);
+
+  let parsed: unknown;
+  try {
+    const cleaned = raw.trim().replace(/^```json\s*/i, "").replace(/```$/, "");
+    parsed = JSON.parse(cleaned);
+  } catch {
+    throw new Error("La IA no devolvió un JSON válido.");
+  }
+
+  const obj = parsed as Record<string, unknown>;
+  const priority = ["low", "medium", "high", "urgent"].includes(obj.priority as string)
+    ? (obj.priority as SuggestedTaskFields["priority"])
+    : "medium";
+  const assigneeName = typeof obj.assigneeName === "string" && obj.assigneeName.trim() ? obj.assigneeName.trim() : null;
+
+  return { priority, assigneeName };
+}
