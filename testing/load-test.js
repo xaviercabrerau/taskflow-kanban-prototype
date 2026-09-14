@@ -54,10 +54,12 @@ const httpHeaders = {
 // Test Stages / Scenarios
 // ===========================================================================
 
+const scenarioName = __ENV.TEST_SCENARIO || 'baseline';
+
 export const options = {
   stages: [
-    // Scenario selection via environment variable or default to baseline
-    ...(loadTestScenario('baseline') || [
+    // Scenario selection via environment variable, default to baseline
+    ...(loadTestScenario(scenarioName) || [
       { duration: '5m', target: 10 },
     ]),
   ],

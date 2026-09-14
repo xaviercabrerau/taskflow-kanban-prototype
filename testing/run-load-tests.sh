@@ -177,6 +177,7 @@ run_load_test() {
   # Build environment
   export BASE_URL
   export AUTH_TOKEN
+  export TEST_SCENARIO="${TEST_SCENARIO:-baseline}"
   export TEST_USER_ID="${TEST_USER_ID:-550e8400-e29b-41d4-a716-446655440000}"
   export ORGANIZATION_ID="${ORGANIZATION_ID:-660e8400-e29b-41d4-a716-446655440000}"
 
