@@ -1,12 +1,13 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useBoard } from "@/context/BoardContext";
 import { Task, parseDateOnly } from "@/lib/types";
 import { generateTempId } from "@/lib/tempId";
 import Shell from "./Shell";
 import TaskModal from "./TaskModal";
 import { useClickableRow } from "@/hooks/useClickableRow";
+import { fetchBoardTaskLinks, type TaskLink } from "@/lib/supabase/task-links-repo";
 
 function GanttRow({
   task,
@@ -15,6 +16,7 @@ function GanttRow({
   barClassName,
   windowDays,
   onOpen,
+  barRef,
 }: {
   task: Task;
   startCol: number;
@@ -22,13 +24,14 @@ function GanttRow({
   barClassName: string;
   windowDays: number;
   onOpen: () => void;
+  barRef: (el: HTMLDivElement | null) => void;
 }) {
   const rowProps = useClickableRow(onOpen);
   return (
     <div className="gantt-row" style={{ gridTemplateColumns: `170px repeat(${windowDays}, 1fr)` }}>
       <div className="rowlabel">{task.title}</div>
       <div style={{ gridColumn: `${startCol} / ${endCol}` }}>
-        <div className={barClassName} {...rowProps}>
+        <div className={barClassName} ref={barRef} {...rowProps}>
           <span className="bar-label">{task.title}</span>
         </div>
       </div>
@@ -55,9 +58,15 @@ function formatShort(d: Date): string {
 }
 
 export default function GanttView() {
-  const { state, addTask, updateTask, deleteTask, moveTask } = useBoard();
+  const { state, addTask, updateTask, deleteTask, moveTask, supabase } = useBoard();
   const [modal, setModal] = useState<{ mode: "create" | "edit"; task?: Task; columnId?: string } | null>(
     null
+  );
+  const [taskLinks, setTaskLinks] = useState<TaskLink[]>([]);
+  const barRefs = useRef<Map<string, HTMLDivElement>>(new Map());
+  const bodyRef = useRef<HTMLDivElement>(null);
+  const [arrows, setArrows] = useState<{ id: string; x1: number; y1: number; x2: number; y2: number }[]>(
+    []
   );
 
   const windowStart = useMemo(() => {
@@ -102,6 +111,42 @@ export default function GanttView() {
     return { items, outsideWindow };
   }, [state, windowStart]);
 
+  useEffect(() => {
+    const allTaskIds = Object.keys(state.tasks);
+    if (allTaskIds.length === 0) {
+      setTaskLinks([]);
+      return;
+    }
+    let cancelled = false;
+    fetchBoardTaskLinks(supabase, allTaskIds).then((links) => {
+      if (!cancelled) setTaskLinks(links);
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, state.tasks]);
+
+  useEffect(() => {
+    if (!bodyRef.current) return;
+    const containerRect = bodyRef.current.getBoundingClientRect();
+    const next: typeof arrows = [];
+    for (const link of taskLinks) {
+      const sourceEl = barRefs.current.get(link.sourceTaskId);
+      const targetEl = barRefs.current.get(link.targetTaskId);
+      if (!sourceEl || !targetEl) continue; // Una de las dos tareas no está en la ventana visible.
+      const sourceRect = sourceEl.getBoundingClientRect();
+      const targetRect = targetEl.getBoundingClientRect();
+      next.push({
+        id: link.id,
+        x1: sourceRect.right - containerRect.left,
+        y1: sourceRect.top + sourceRect.height / 2 - containerRect.top,
+        x2: targetRect.left - containerRect.left,
+        y2: targetRect.top + targetRect.height / 2 - containerRect.top,
+      });
+    }
+    setArrows(next);
+  }, [taskLinks, rows.items]);
+
   function barClass(task: Task, columnId: string): string {
     const column = state.columns.find((c) => c.id === columnId);
     const isDone = column?.isDoneState ?? false;
@@ -126,7 +171,7 @@ export default function GanttView() {
               </div>
             ))}
           </div>
-          <div className="gantt-body">
+          <div className="gantt-body" ref={bodyRef} style={{ position: "relative" }}>
             {todayIndex >= 0 && todayIndex < WINDOW_DAYS && (
               <>
                 <div
@@ -150,6 +195,10 @@ export default function GanttView() {
                 windowDays={WINDOW_DAYS}
                 barClassName={barClass(task, columnId)}
                 onOpen={() => setModal({ mode: "edit", task, columnId })}
+                barRef={(el) => {
+                  if (el) barRefs.current.set(task.id, el);
+                  else barRefs.current.delete(task.id);
+                }}
               />
             ))}
             {rows.items.length === 0 && (
@@ -157,6 +206,35 @@ export default function GanttView() {
                 Ninguna tarea con fecha de vencimiento cae en esta ventana de 14 días.
               </p>
             )}
+            <svg
+              style={{
+                position: "absolute",
+                top: 0,
+                left: 0,
+                width: "100%",
+                height: "100%",
+                pointerEvents: "none",
+              }}
+              aria-hidden="true"
+            >
+              <defs>
+                <marker id="gantt-arrow" markerWidth="8" markerHeight="8" refX="6" refY="3" orient="auto">
+                  <path d="M0,0 L6,3 L0,6 Z" fill="var(--muted)" />
+                </marker>
+              </defs>
+              {arrows.map((a) => (
+                <line
+                  key={a.id}
+                  x1={a.x1}
+                  y1={a.y1}
+                  x2={a.x2}
+                  y2={a.y2}
+                  stroke="var(--muted)"
+                  strokeWidth="1.5"
+                  markerEnd="url(#gantt-arrow)"
+                />
+              ))}
+            </svg>
           </div>
           {rows.outsideWindow > 0 && (
             <div className="gantt-note">

@@ -28,6 +28,32 @@ export async function fetchTaskLinks(supabase: TypedClient, taskId: string): Pro
   }));
 }
 
+/** Todos los links tipo "blocks" cuyos DOS extremos están en el conjunto
+ * de tareas dado (una sola consulta por tablero, no una por tarea —
+ * evita N+1 en GanttView). */
+export async function fetchBoardTaskLinks(supabase: TypedClient, allBoardTaskIds: string[]): Promise<TaskLink[]> {
+  if (allBoardTaskIds.length === 0) return [];
+  const { data, error } = await supabase
+    .from("task_links")
+    .select("id, source_task_id, target_task_id, link_type")
+    .eq("link_type", "blocks")
+    .in("source_task_id", allBoardTaskIds);
+  if (error) throw error;
+  // El target también debe pertenecer al tablero — se filtra en el
+  // cliente porque dos .in() encadenados en PostgREST se combinan con
+  // AND, no OR, lo que excluiría links válidos donde solo el source
+  // está en la lista.
+  const idSet = new Set(allBoardTaskIds);
+  return (data ?? [])
+    .filter((r) => idSet.has(r.target_task_id))
+    .map((r) => ({
+      id: r.id,
+      sourceTaskId: r.source_task_id,
+      targetTaskId: r.target_task_id,
+      linkType: r.link_type as LinkType,
+    }));
+}
+
 export async function createTaskLink(
   supabase: TypedClient,
   sourceTaskId: string,
