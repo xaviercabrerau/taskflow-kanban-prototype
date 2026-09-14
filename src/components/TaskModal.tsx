@@ -157,6 +157,7 @@ export default function TaskModal({
       return;
     }
     setSuggestionDismissed(false);
+    let ignore = false;
     const timer = setTimeout(async () => {
       try {
         const res = await fetch("/api/tasks/suggest", {
@@ -164,14 +165,19 @@ export default function TaskModal({
           headers: { "Content-Type": "application/json" },
           body: JSON.stringify({ title: title.trim(), boardId: activeBoardId, tenantId }),
         });
+        if (ignore) return; // A newer effect run superseded this one — drop the stale response.
         if (!res.ok) return; // 501 (sin IA configurada) u otro error: no mostrar nada.
         const json = await res.json();
+        if (ignore) return; // Also guard after the second await, in case it raced during .json().
         setSuggestion(json);
       } catch {
         // Silencioso — es una sugerencia opcional, no debe interrumpir la creación de la tarea.
       }
     }, 600);
-    return () => clearTimeout(timer);
+    return () => {
+      ignore = true;
+      clearTimeout(timer);
+    };
   }, [title, mode, tenantId, activeBoardId]);
 
   async function handleAiParse() {
