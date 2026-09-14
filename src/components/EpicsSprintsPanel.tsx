@@ -12,6 +12,7 @@ import {
   type Sprint,
   type SprintStatus,
 } from "@/lib/supabase/sprints-repo";
+import { fetchSprintBurndown, type BurndownPoint } from "@/lib/supabase/sprint-burndown-repo";
 
 interface EpicsSprintsPanelProps {
   onClose: () => void;
@@ -42,6 +43,8 @@ export default function EpicsSprintsPanel({ onClose, embedded = false }: EpicsSp
   const [sprintEnd, setSprintEnd] = useState("");
   const [creatingSprint, setCreatingSprint] = useState(false);
 
+  const [burndownBySprintId, setBurndownBySprintId] = useState<Record<string, BurndownPoint[]>>({});
+
   useEffect(() => {
     if (!activeBoardId) return;
     let cancelled = false;
@@ -63,6 +66,23 @@ export default function EpicsSprintsPanel({ onClose, embedded = false }: EpicsSp
       cancelled = true;
     };
   }, [supabase, activeBoardId]);
+
+  // Carga el burndown de cada sprint visible cuando cambian los sprints.
+  useEffect(() => {
+    let cancelled = false;
+    sprints.forEach((sprint) => {
+      fetchSprintBurndown(supabase, sprint.id)
+        .then((points) => {
+          if (!cancelled) setBurndownBySprintId((prev) => ({ ...prev, [sprint.id]: points }));
+        })
+        .catch((err) => {
+          console.error("No se pudo cargar el burndown del sprint:", err);
+        });
+    });
+    return () => {
+      cancelled = true;
+    };
+  }, [supabase, sprints]);
 
   // Progreso calculado en el cliente a partir de state.tasks (ya cargado
   // completo por el tablero) — evita una consulta adicional por
@@ -289,6 +309,46 @@ export default function EpicsSprintsPanel({ onClose, embedded = false }: EpicsSp
                         {sp.status === "closed" ? "Velocity: " : ""}
                         {done}/{total} tareas terminadas
                       </div>
+                      {(() => {
+                        const points = burndownBySprintId[sp.id] ?? [];
+                        if (points.length === 0 || !sp.startDate || !sp.endDate) {
+                          return (
+                            <p style={{ fontSize: 12, color: "var(--muted)", marginTop: 8 }}>
+                              Sin datos de burndown antes de la fecha de despliegue de esta función.
+                            </p>
+                          );
+                        }
+                        const total = points[0].total;
+                        const startMs = new Date(sp.startDate).getTime();
+                        const endMs = new Date(sp.endDate).getTime();
+                        const totalDays = Math.max(1, Math.round((endMs - startMs) / 86400000));
+                        const width = 280;
+                        const height = 100;
+                        const xForDay = (dayOffset: number) => (dayOffset / totalDays) * width;
+                        const yForCount = (count: number) => height - (count / Math.max(1, total)) * height;
+
+                        const idealPath = `M ${xForDay(0)} ${yForCount(total)} L ${xForDay(totalDays)} ${yForCount(0)}`;
+                        const realPath = points
+                          .map((p, i) => {
+                            const dayOffset = Math.round((new Date(p.date).getTime() - startMs) / 86400000);
+                            return `${i === 0 ? "M" : "L"} ${xForDay(dayOffset)} ${yForCount(p.remaining)}`;
+                          })
+                          .join(" ");
+
+                        return (
+                          <svg
+                            viewBox={`0 0 ${width} ${height}`}
+                            width="100%"
+                            height={height}
+                            role="img"
+                            aria-label={`Burndown del sprint ${sp.name}`}
+                            style={{ marginTop: 8 }}
+                          >
+                            <path d={idealPath} stroke="var(--muted)" strokeWidth="1.5" strokeDasharray="4 3" fill="none" />
+                            <path d={realPath} stroke="var(--accent)" strokeWidth="2" fill="none" />
+                          </svg>
+                        );
+                      })()}
                     </div>
                   );
                 })
