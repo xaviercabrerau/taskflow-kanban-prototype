@@ -119,4 +119,60 @@ describe('GET /api/cron/github-sync-merged', () => {
     expect(response.status).toBe(200);
     expect(json.moved).toBe(0);
   });
+
+  it('does not mark the link merged (or count the task as moved) when the task move fails', async () => {
+    const linkRow = {
+      id: 'link-3', task_id: 'task-3', url: 'https://github.com/acme/repo/pull/9',
+      repo: 'acme/repo', number: 9, kind: 'pull_request', state: 'open',
+      tasks: { id: 'task-3', board_id: 'board-1', column_id: 'col-todo', tenant_id: 'org-1' },
+    };
+    const linkUpdateEq = jest.fn().mockResolvedValue({ error: null });
+    const linkUpdate = jest.fn().mockReturnValue({ eq: linkUpdateEq });
+    const taskUpdateEq = jest.fn().mockResolvedValue({ error: { message: 'move failed' } });
+    const taskUpdate = jest.fn().mockReturnValue({ eq: taskUpdateEq });
+
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'task_github_links') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          neq: jest.fn().mockResolvedValue({ data: [linkRow], error: null }),
+          update: linkUpdate,
+        };
+      }
+      if (table === 'board_columns') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue({ data: [{ id: 'col-done', position: 99 }], error: null }),
+        };
+      }
+      if (table === 'tasks') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue({ data: [{ position: 3 }], error: null }),
+          update: taskUpdate,
+        };
+      }
+      if (table === 'audit_log') {
+        return { insert: jest.fn().mockResolvedValue({ error: null }) };
+      }
+      return {};
+    });
+    (getGithubToken as jest.Mock).mockResolvedValue('gh-token');
+    (fetchGithubIssueOrPr as jest.Mock).mockResolvedValue({
+      repo: 'acme/repo', number: 9, kind: 'pull_request', title: 'Fix bug', state: 'merged',
+    });
+
+    const response = await githubSyncMerged(makeRequest('test-secret'));
+    const json = await response.json();
+
+    expect(response.status).toBe(200);
+    expect(json.moved).toBe(0);
+    expect(taskUpdate).toHaveBeenCalledTimes(1);
+    expect(linkUpdate).not.toHaveBeenCalled();
+  });
 });

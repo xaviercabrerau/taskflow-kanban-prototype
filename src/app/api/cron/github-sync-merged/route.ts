@@ -108,8 +108,31 @@ export async function GET(request: Request): Promise<Response> {
       .limit(1);
     const nextPosition = (maxPositionRows?.[0]?.position ?? 0) + 1;
 
-    await supabase.from("tasks").update({ column_id: doneColumnId, position: nextPosition }).eq("id", task.id);
-    await supabase.from("task_github_links").update({ state: "merged" }).eq("id", link.id);
+    const { error: moveError } = await supabase
+      .from("tasks")
+      .update({ column_id: doneColumnId, position: nextPosition })
+      .eq("id", task.id);
+    if (moveError) {
+      console.error("Failed to move task after GitHub PR merge, will retry next run:", moveError.message);
+      continue;
+    }
+
+    const { error: linkUpdateError } = await supabase
+      .from("task_github_links")
+      .update({ state: "merged" })
+      .eq("id", link.id);
+    if (linkUpdateError) {
+      console.error(
+        "Task moved but failed to mark task_github_links as merged — next run may re-process it:",
+        linkUpdateError.message
+      );
+      // Don't `continue` here — the task DID move, so still count it and write
+      // the audit log; the only side effect of this specific failure is a
+      // redundant no-op move attempt on the next cron run (harmless: the task
+      // is already in the done column, so the "already done" branch above will
+      // just mark it merged and skip re-moving it).
+    }
+
     const { error: auditError } = await supabase.from("audit_log").insert({
       tenant_id: task.tenant_id,
       actor_id: null,
