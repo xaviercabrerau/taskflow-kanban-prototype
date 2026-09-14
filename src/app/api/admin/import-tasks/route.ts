@@ -26,6 +26,11 @@ export async function POST(request: Request) {
     return Response.json({ error: "file y boardId son requeridos." }, { status: 400 });
   }
 
+  const MAX_FILE_SIZE_BYTES = 5 * 1024 * 1024; // 5 MB
+  if (file.size > MAX_FILE_SIZE_BYTES) {
+    return Response.json({ error: "El archivo supera el límite de 5 MB." }, { status: 400 });
+  }
+
   const { data: board, error: boardError } = await supabase
     .from("boards")
     .select("id, tenant_id")

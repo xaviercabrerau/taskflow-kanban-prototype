@@ -331,4 +331,42 @@ describe('POST /api/admin/import-tasks', () => {
     expect(response.status).toBe(400);
     expect(json.error).toBe('Máximo 500 filas por archivo.');
   });
+
+  it('rejects a file larger than 5MB before parsing it', async () => {
+    mockSupabase.auth.getUser.mockResolvedValue({ data: { user: { id: 'u1' } }, error: null });
+    mockSupabase.from.mockImplementation((table: string) => {
+      if (table === 'organization_members') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { organization_id: 'org-1', org_role: 'owner' },
+            error: null,
+          }),
+        };
+      }
+      if (table === 'boards') {
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          maybeSingle: jest.fn().mockResolvedValue({
+            data: { id: 'board-1', tenant_id: 'org-1' },
+            error: null,
+          }),
+        };
+      }
+      return {};
+    });
+
+    // Archivo de 6 MB — no necesita ser un xlsx/csv válido, porque el
+    // chequeo de tamaño debe rechazarlo ANTES de intentar parsearlo.
+    const bigBuffer = Buffer.alloc(6 * 1024 * 1024, 'a');
+    const file = new File([bigBuffer], 'grande.csv', { type: 'text/csv' });
+
+    const response = await importTasks(makeFormDataRequest(file, 'board-1'));
+    const json = await response.json();
+
+    expect(response.status).toBe(400);
+    expect(json.error).toMatch(/5 ?MB/i);
+  });
 });
