@@ -100,20 +100,28 @@ export async function GET(request: Request): Promise<Response> {
       continue;
     }
 
-    // Date.now() as position: monotonically increasing, so the task lands
-    // after whatever is already in the done column without an extra query
-    // (mirrors the "append" fallback in board-repo's fractional positioning).
-    await supabase.from("tasks").update({ column_id: doneColumnId, position: Date.now() }).eq("id", task.id);
+    const { data: maxPositionRows } = await supabase
+      .from("tasks")
+      .select("position")
+      .eq("column_id", doneColumnId)
+      .order("position", { ascending: false })
+      .limit(1);
+    const nextPosition = (maxPositionRows?.[0]?.position ?? 0) + 1;
+
+    await supabase.from("tasks").update({ column_id: doneColumnId, position: nextPosition }).eq("id", task.id);
     await supabase.from("task_github_links").update({ state: "merged" }).eq("id", link.id);
-    await supabase.from("audit_log").insert({
+    const { error: auditError } = await supabase.from("audit_log").insert({
       tenant_id: task.tenant_id,
       actor_id: null,
-      source: "github_sync_cron",
+      source: "automation",
       action: "task_auto_moved_github_merge",
       resource_type: "task",
       resource_id: task.id,
       metadata: { github_url: link.url },
     });
+    if (auditError) {
+      console.error("Failed to write audit_log for github_sync_cron task move:", auditError.message);
+    }
     moved += 1;
   }
 

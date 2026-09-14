@@ -66,7 +66,13 @@ describe('GET /api/cron/github-sync-merged', () => {
         };
       }
       if (table === 'tasks') {
-        return { update: jest.fn().mockReturnThis(), eq: jest.fn().mockResolvedValue({ error: null }) };
+        return {
+          select: jest.fn().mockReturnThis(),
+          eq: jest.fn().mockReturnThis(),
+          order: jest.fn().mockReturnThis(),
+          limit: jest.fn().mockResolvedValue({ data: [{ position: 3 }], error: null }),
+          update: jest.fn().mockReturnThis(),
+        };
       }
       if (table === 'audit_log') {
         return { insert: jest.fn().mockResolvedValue({ error: null }) };
