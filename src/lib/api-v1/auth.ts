@@ -1,7 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import { NextResponse } from "next/server";
 import type { Database } from "@/lib/supabase/database.types";
-import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import {
+  checkIpRateLimit,
+  checkRateLimit,
+  deriveIpRateLimitKey,
+  deriveRateLimitKey,
+  getClientIp,
+} from "@/lib/rate-limit";
 
 /**
  * Auth/rate-limit for the public REST API (/api/v1/*) — reuses the exact
@@ -33,6 +39,14 @@ export interface ApiAuthResult {
 
 /** Returns either an authenticated { token, supabase } or a ready-to-return NextResponse error. */
 export async function authenticateApiRequest(request: Request): Promise<ApiAuthResult | NextResponse> {
+  // Por IP de confianza antes que por token: el límite por token solo no frena
+  // a quien varía el token (cada variante es un cubo nuevo) y cada intento
+  // acabaría en una llamada a la base.
+  const ipLimit = await checkIpRateLimit(deriveIpRateLimitKey(getClientIp(request)));
+  if (!ipLimit.success) {
+    return NextResponse.json({ error: "Rate limit exceeded. Try again later." }, { status: 429 });
+  }
+
   const token = extractApiToken(request);
   if (!token) {
     return NextResponse.json(
