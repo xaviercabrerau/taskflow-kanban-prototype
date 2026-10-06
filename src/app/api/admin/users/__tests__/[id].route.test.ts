@@ -294,6 +294,17 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
               }),
             };
           }
+          if (orgMembersCallCount === 2) {
+            // Usuario destino (miembro de la org, no propietario) — read.
+            return {
+              select: jest.fn().mockReturnThis(),
+              eq: jest.fn().mockReturnThis(),
+              maybeSingle: jest.fn().mockResolvedValue({
+                data: { org_role: 'member' },
+                error: null,
+              }),
+            };
+          }
           // Role update — write, fails. .update().eq().eq() is the real
           // call shape; the second .eq() is where the promise resolves.
           const secondEq = jest.fn().mockResolvedValue({ error: { message: 'No se pudo actualizar el rol' } });
@@ -394,7 +405,14 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
         error: null,
       });
 
-      // Second call for admin check
+      // Second call: usuario destino (miembro de la org, no propietario)
+      mockFromChain.select.mockReturnValueOnce(mockFromChain);
+      mockFromChain.maybeSingle.mockResolvedValueOnce({
+        data: { org_role: 'admin' },
+        error: null,
+      });
+
+      // Third call for admin check
       mockFromChain.select.mockReturnValueOnce(mockFromChain);
       mockFromChain.eq.mockReturnValueOnce(mockFromChain);
       mockFromChain.in.mockResolvedValueOnce({
@@ -459,6 +477,16 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
 
       (mockSupabase.from as jest.Mock)
         .mockReturnValueOnce({ select: jest.fn().mockReturnValue(mockMembershipSelectChain) })
+        // Usuario destino (pertenencia a la org y rol): select -> eq -> eq -> maybeSingle
+        .mockReturnValueOnce({
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                maybeSingle: jest.fn().mockResolvedValue({ data: { org_role: 'member' }, error: null }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValueOnce({ select: jest.fn().mockReturnValue(mockAdminSelectChain) })
         .mockReturnValueOnce(mockDeleteChain);
 
@@ -517,6 +545,16 @@ describe('API: /api/admin/users/[id] (GET, PUT, DELETE)', () => {
 
       (mockSupabase.from as jest.Mock)
         .mockReturnValueOnce({ select: jest.fn().mockReturnValue(mockMembershipSelectChain) })
+        // Usuario destino (pertenencia a la org y rol): select -> eq -> eq -> maybeSingle
+        .mockReturnValueOnce({
+          select: jest.fn().mockReturnValue({
+            eq: jest.fn().mockReturnValue({
+              eq: jest.fn().mockReturnValue({
+                maybeSingle: jest.fn().mockResolvedValue({ data: { org_role: 'member' }, error: null }),
+              }),
+            }),
+          }),
+        })
         .mockReturnValueOnce({ select: jest.fn().mockReturnValue(mockAdminSelectChain) })
         .mockReturnValueOnce(mockDeleteChain);
 
