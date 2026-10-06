@@ -165,9 +165,9 @@ has run once. Wait one cycle before escalating.
 Source: `src/app/api/cron/alert-check/route.ts`. Scheduled by `vercel.json` —
 **the only Vercel cron in the project** — at `0 8 * * *` (daily, 08:00 UTC).
 
-Auth: `Authorization: Bearer <CRON_SECRET>`, or `?secret=<CRON_SECRET>` when the
-header is absent. The query-param fallback exists because many free-tier uptime
-monitors cannot send custom headers. Anything else → 401.
+Auth: `Authorization: Bearer <CRON_SECRET>` only. The `?secret=<CRON_SECRET>`
+query-param fallback was removed: URLs end up in access logs, and `CRON_SECRET`
+also authenticates other crons. Anything else → 401.
 
 ```bash
 curl -s -H "Authorization: Bearer $CRON_SECRET" \
@@ -191,10 +191,10 @@ Minimum useful setup, no new code required:
 | `https://task.conto.ec/api/health` | 1–5 min | status ≠ 200 |
 | `https://task.conto.ec/` | 5 min | status ≠ 200 |
 | `https://task.conto.ec/api/health/cron` | 15–60 min | status ≠ 200 |
-| `https://task.conto.ec/api/cron/alert-check?secret=<CRON_SECRET>` | hourly | status ≠ 200 |
 
-Put the secret in the monitor's own secret storage. Never in a repo, a
-dashboard description or this file.
+`/api/cron/alert-check` is deliberately not in this list: it only accepts
+`Authorization: Bearer <CRON_SECRET>`, which free-tier monitors cannot send (the
+old `?secret=` URL form was removed). The probes above need no secret.
 
 ---
 

@@ -112,7 +112,7 @@ locally, not in production.
 
 | Variable | Purpose |
 |---|---|
-| `CRON_SECRET` | Vercel Cron sends it as `Authorization: Bearer …` (or `?secret=`) to `/api/cron/alert-check` |
+| `CRON_SECRET` | Vercel Cron sends it as `Authorization: Bearer …` to `/api/cron/alert-check` |
 | `INTERNAL_NOTIFY_SECRET` | `x-internal-secret` header for `/api/internal/notify-event` and `/api/internal/sync-calendar-event`, called by Postgres triggers via `pg_net` |
 | `JWT_SECRET` | Signs/verifies the Google OAuth `state` param (`src/lib/google/oauth.ts`) — unrelated to Supabase Auth's own JWTs. (Public API v1 authenticates with PATs validated in Postgres, not with this secret.) |
 | `ALERT_WEBHOOK_URL` | Incoming webhook the alert cron posts to when a health check fails |

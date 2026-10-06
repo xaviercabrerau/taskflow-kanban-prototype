@@ -25,7 +25,7 @@ is only about *who is allowed to call what*.
 | **Supabase session** | `createClient()` from `src/lib/supabase/server.ts` reads the auth cookie; `supabase.auth.getUser()` must succeed, else `401`. | `/api/admin/*`, `/api/tasks/*`, `/api/share-links/*`, `/api/integrations/google/*` |
 | **Session + `org_role = 'owner'`** | The above, plus a lookup on `organization_members` that must return `org_role === "owner"`, else `403`. | most write-side admin routes |
 | **Personal access token (PAT)** | `Authorization: Bearer tfmcp_...`. The route only checks prefix/length; the token is *actually* validated inside the `mcp_*` SECURITY DEFINER RPCs in Postgres. | `/api/v1/*`, `/api/mcp` |
-| **Shared secret (cron)** | `Authorization: Bearer <CRON_SECRET>` compared with `timingSafeEqual`; falls back to `?secret=<CRON_SECRET>` when no header is present. | `/api/cron/alert-check` |
+| **Shared secret (cron)** | `Authorization: Bearer <CRON_SECRET>` compared with `timingSafeEqual`; no query-string fallback (removed, was SEC-2). | `/api/cron/alert-check` |
 | **Shared secret (internal)** | `x-internal-secret: <INTERNAL_NOTIFY_SECRET>` header, `timingSafeEqual`. Called by Postgres triggers via `net.http_post`. | `/api/internal/*` |
 | **Signed OAuth state** | HMAC-signed `state` JWT (`JWT_SECRET`) via `verifyOAuthState`, *plus* a check that the finishing session is the same user. | `/api/integrations/google/callback` |
 | **Share token** | No user auth. The opaque token is resolved by `resolve_share_link` / `add_share_link_comment` (SECURITY DEFINER), which enforce scope, permission and expiry. | `/api/public/share/[token]*` |
@@ -62,7 +62,7 @@ Legend: ✅ verified adequate · ⚠️ verified, with a caveat worth knowing ·
 
 | Endpoint | Method | Auth verified in code | Status |
 |---|---|---|---|
-| `/api/cron/alert-check` | GET | `CRON_SECRET` via `Authorization: Bearer`, `timingSafeEqual`; `?secret=` query fallback only when the header is absent | ⚠️ SEC-2 |
+| `/api/cron/alert-check` | GET | `CRON_SECRET` via `Authorization: Bearer`, `timingSafeEqual`; the `?secret=` query fallback was removed | ✅ SEC-2 resolved |
 | `/api/health` | GET | **None** — by design. Reads one row from `permissions`, a global catalog whose RLS `qual = true`. Leaks no tenant data | ✅ |
 | `/api/health/cron` | GET | Forwards any `Authorization` header to Supabase, but `get_cron_health()` was later granted to `anon`, so the endpoint answers with no header at all | 🔓 SEC-1 |
 
@@ -140,16 +140,18 @@ answers to anyone with no header at all.
 - **If you want it closed:** revoke the `anon` grant and give `/api/cron/alert-check`
   its own path to the data, or gate this route on `CRON_SECRET` too.
 
-### SEC-2 — `CRON_SECRET` accepted as a URL query parameter
+### SEC-2 — `CRON_SECRET` accepted as a URL query parameter — RESOLVED
 
-`/api/cron/alert-check` falls back to `?secret=<CRON_SECRET>` when no
-`Authorization` header is present. The comparison is timing-safe and exact, but a
-secret in a query string ends up in Vercel access logs, browser history and any
-intermediary proxy log.
+Fixed (finding D of the 2026-10-05 review): `/api/cron/alert-check` now only
+accepts `Authorization: Bearer <CRON_SECRET>`. The `?secret=<CRON_SECRET>`
+fallback was removed because a secret in a query string ends up in Vercel access
+logs, browser history and any intermediary proxy log, and `CRON_SECRET` also
+authenticates other crons. External uptime monitors should poll `/api/health`
+and `/api/health/cron`, which need no secret.
 
-- **Why it exists:** free-tier uptime monitors often cannot send custom headers.
-- **Mitigation if kept:** treat `CRON_SECRET` as log-exposed, rotate it on any
-  log-access incident, and prefer the header path wherever possible.
+- **If a monitor ever used `?secret=`:** that URL (and so `CRON_SECRET`) may sit
+  in access logs from before the fix. Rotate `CRON_SECRET` once if that is a
+  concern, and repoint the monitor.
 
 ### SEC-3 — `/api/admin/import-tasks/template` requires a session but not ownership
 

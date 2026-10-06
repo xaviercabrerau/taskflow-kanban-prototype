@@ -18,7 +18,7 @@ The API does not have one single auth scheme. Five different ones are in use:
 |---|---|---|
 | **Supabase session** | `/api/admin/*`, `/api/tasks/*`, `/api/share-links/*`, `/api/integrations/google/*` | Server-side `createClient()` from `src/lib/supabase/server.ts` reads the Supabase auth cookie. `supabase.auth.getUser()` must succeed, else `401`. |
 | **Personal access token (PAT)** | `/api/v1/*`, `/api/mcp` | `Authorization: Bearer tfmcp_...`, issued by `create_mcp_session` and managed in `/admin/api-keys`. Validated inside the `mcp_*` SECURITY DEFINER RPCs, not in the route. |
-| **Shared secret (cron)** | `/api/cron/alert-check` | `Authorization: Bearer <CRON_SECRET>`, or `?secret=<CRON_SECRET>` for monitors that cannot send headers. Compared with `timingSafeEqual`. |
+| **Shared secret (cron)** | `/api/cron/alert-check` | `Authorization: Bearer <CRON_SECRET>` only (the `?secret=` fallback was removed). Compared with `timingSafeEqual`. |
 | **Shared secret (internal)** | `/api/internal/*` | `x-internal-secret: <INTERNAL_NOTIFY_SECRET>` header. Called by Postgres triggers via `net.http_post`, never from the browser. |
 | **None (public)** | `/api/health`, `/api/public/share/[token]*` | Rate-limited; the share routes authorize via the share token itself inside SECURITY DEFINER RPCs. |
 
@@ -334,9 +334,10 @@ pg_cron job health, via the `get_cron_health()` SECURITY DEFINER RPC.
 
 The only endpoint scheduled in `vercel.json` (`0 8 * * *`, daily 08:00 UTC).
 
-- **Auth:** `Authorization: Bearer <CRON_SECRET>`, or — checked only when the header is
-  absent — `?secret=<CRON_SECRET>`. The query fallback exists for free-tier uptime monitors
-  that cannot send custom headers. Both use `timingSafeEqual`. No `CRON_SECRET` set → always `401`.
+- **Auth:** `Authorization: Bearer <CRON_SECRET>` only, compared with `timingSafeEqual`. A
+  `?secret=<CRON_SECRET>` query fallback used to exist for free-tier uptime monitors; it was
+  removed because URLs land in access logs and `CRON_SECRET` also authenticates other crons.
+  No `CRON_SECRET` set → always `401`.
 - **Behaviour:** runs the same two checks as `/api/health` and `/api/health/cron`, and
   POSTs a combined `{ text, content }` payload to `ALERT_WEBHOOK_URL` (one body works for
   both Slack and Discord webhooks) if anything is wrong. With no `ALERT_WEBHOOK_URL` it

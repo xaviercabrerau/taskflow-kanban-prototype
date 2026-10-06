@@ -144,8 +144,8 @@ Then, in a browser:
 
 Daily at 08:00 UTC. It appears under *Vercel → Settings → Cron Jobs* after the
 first production deployment. The endpoint authenticates the caller with
-`CRON_SECRET` (sent as `Authorization: Bearer <CRON_SECRET>`, or as `?secret=`
-for external monitors that cannot set custom headers). Any document claiming
+`CRON_SECRET` (sent as `Authorization: Bearer <CRON_SECRET>`; the old
+`?secret=` query-param fallback was removed). Any document claiming
 additional crons in `vercel.json` is out of date.
 
 ---

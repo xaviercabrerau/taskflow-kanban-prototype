@@ -115,7 +115,7 @@ openssl rand -base64 32
 
 | Variable | What it protects |
 |---|---|
-| `CRON_SECRET` | Authenticates the Vercel cron against `/api/cron/alert-check` (sent as `Authorization: Bearer <value>`, or `?secret=` for monitors that cannot send headers) |
+| `CRON_SECRET` | Authenticates the Vercel cron against `/api/cron/alert-check` (sent as `Authorization: Bearer <value>`; the old `?secret=` query-param fallback was removed) |
 | `INTERNAL_NOTIFY_SECRET` | Protects `/api/internal/notify-event` and `/api/internal/sync-calendar-event`, called by Postgres triggers via `pg_net` |
 | `JWT_SECRET` | Signs the Google OAuth `state` parameter and the tokens of the public REST API `/api/v1/*` |
 

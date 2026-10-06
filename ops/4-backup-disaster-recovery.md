@@ -343,9 +343,9 @@ Two secrets have side effects when rotated:
   it in Vercel only, notifications silently stop. Grep the migrations for how it
   is stored and update both sides.
 * **`CRON_SECRET`** — Vercel Cron sends it automatically once it is set as an env
-  var, but any external uptime monitor calling
-  `/api/cron/alert-check?secret=...` has the old value hardcoded in its URL and
-  must be updated by hand.
+  var. (An external monitor that still calls `/api/cron/alert-check?secret=...`
+  from before that URL form was removed now gets a 401: repoint it to
+  `/api/health`.)
 
 ### 6.4 Verify the restore
 

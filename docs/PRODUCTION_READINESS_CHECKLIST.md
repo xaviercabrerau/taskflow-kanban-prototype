@@ -81,8 +81,8 @@ All 31 route files were re-read on 2026-09-10. Full matrix and findings in
 - [ ] **Open — SEC-1:** `/api/health/cron` answers with no auth at all (the
       `anon` grant on `get_cron_health()` bypasses the header forwarding).
       Low-sensitivity data; documented as an accepted tradeoff in the route
-- [ ] **Open — SEC-2:** `/api/cron/alert-check` accepts `?secret=<CRON_SECRET>`
-      in the URL, which lands in access logs
+- [x] **Resolved — SEC-2:** `/api/cron/alert-check` no longer accepts
+      `?secret=<CRON_SECRET>` in the URL (removed; header auth only)
 - [ ] **Open — SEC-3:** `/api/admin/import-tasks/template` requires a session but
       not owner
 - [ ] **Open — SEC-4:** membership lookups use `.maybeSingle()` without an

@@ -106,13 +106,16 @@ it runs the same two checks (`permissions` table read for app health,
 chat webhook if it finds a problem.
 
 **Auth**: instead of a Supabase user session, this route is gated by a
-shared secret. It requires either:
-- an `Authorization: Bearer <CRON_SECRET>` header (this is what Vercel Cron
-  sends automatically once the `CRON_SECRET` env var is set — see
-  [Vercel's Cron Jobs docs](https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs)), or
-- (fallback, checked only when the header is absent) a `?secret=<CRON_SECRET>`
-  query param — needed because several free-tier external uptime monitors
-  can't send custom headers but can hit a custom URL.
+shared secret. It requires an `Authorization: Bearer <CRON_SECRET>` header
+(this is what Vercel Cron sends automatically once the `CRON_SECRET` env var is
+set — see
+[Vercel's Cron Jobs docs](https://vercel.com/docs/cron-jobs/manage-cron-jobs#securing-cron-jobs)).
+
+A `?secret=<CRON_SECRET>` query-param fallback used to exist for free-tier
+external uptime monitors that can't send custom headers. It was removed
+(finding D of the 2026-10-05 review): a secret in a URL ends up in access logs
+and proxy history, and `CRON_SECRET` also authenticates other crons. External
+monitors should poll `/api/health` and `/api/health/cron` instead (no secret).
 
 Anything else (missing/wrong secret) is an immediate 401 before any
 Supabase call is made.
@@ -164,20 +167,25 @@ once a day at 08:00 UTC (`0 8 * * *`).
 >
 > **Workaround (free, no Vercel upgrade needed)**: point a free-tier
 > external uptime monitor — **UptimeRobot**, **Better Uptime**, or
-> **Freshping** all offer free tiers with 5-minute check intervals — at:
+> **Freshping** all offer free tiers with 5-minute check intervals — at the
+> two public probes:
 >
 > ```
-> https://<your-domain>/api/cron/alert-check?secret=<CRON_SECRET-value>
+> https://<your-domain>/api/health
+> https://<your-domain>/api/health/cron
 > ```
 >
-> This is exactly why the query-param auth fallback exists: none of those
-> three tools' free tiers support sending a custom `Authorization` header,
-> but all of them support a custom monitor URL. With this in place, Vercel
-> Cron provides a once-daily baseline heartbeat (useful as a backstop even
-> if the external monitor's account lapses or its check silently stops),
-> and the external monitor provides the actual frequent, real-time-ish
-> alerting — both hitting the same endpoint, both gated by the same secret,
-> at zero additional cost.
+> Neither needs a secret, and both return a non-200 status when something is
+> wrong, so the monitor's own notification channels (email, Slack, …) do the
+> alerting. `/api/cron/alert-check` itself can no longer be pointed at by
+> those free tiers: it used to accept `?secret=<CRON_SECRET>` in the URL for
+> them, but that fallback was removed (finding D of the 2026-10-05 review)
+> because URLs end up in access logs and proxy history, and `CRON_SECRET` also
+> authenticates other crons. A monitor that *can* send an
+> `Authorization: Bearer <CRON_SECRET>` header may still call `alert-check`
+> directly. Vercel Cron keeps providing the once-daily baseline heartbeat as a
+> backstop if the external monitor's account lapses or its check silently
+> stops.
 
 ### 4. Sentry — installed and wired up
 
@@ -434,7 +442,7 @@ for local dev, etc.):
      in Vercel. Until this is set, problems are only visible in Vercel's
      function logs (`console.error`), not pushed anywhere.
    - Sign up for a free-tier external uptime monitor (UptimeRobot, Better
-     Uptime, or Freshping) and point it at `/api/cron/alert-check?secret=...`
+     Uptime, or Freshping) and point it at `/api/health` and `/api/health/cron`
      if more-than-daily alerting is wanted — see the Hobby-plan limitation
      called out in section 3.
 

@@ -30,7 +30,7 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" https://task.conto.ec/api/cron/a
 | `/api/cron/alert-check` | Both of the above, then POSTs `ALERT_WEBHOOK_URL` | 200, `{"ok":true,"problems":[],"alerted":false}` | 503 **only** if there were problems *and* the webhook POST failed |
 
 Auth: the first two need none. The third requires `CRON_SECRET`, as a bearer
-token or as `?secret=`.
+token (the old `?secret=` form was removed).
 
 ---
 
