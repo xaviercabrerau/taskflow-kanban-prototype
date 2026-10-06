@@ -18,4 +18,8 @@ export const MONITORED_JOBS = [
   // porque vive en pg_cron (Postgres), no en el cron de Vercel.
   { name: "taskflow_resolve_crm_sync_responses", schedule: "every_minute" },
   { name: "record-sprint-burndown-snapshots", schedule: "daily" },
+  // Llama a /api/cron/github-sync-merged cada 15 min vía pg_net. Vive en
+  // pg_cron y no en vercel.json porque el plan Hobby de Vercel solo admite
+  // crons diarios (20261005130000_move_github_sync_merged_to_pg_cron.sql).
+  { name: "taskflow_github_sync_merged", schedule: "every_15_minutes" },
 ] as const;
