@@ -219,6 +219,24 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     await loadForBoard(board);
   }, [supabase, loadForBoard]);
 
+  // Resincroniza el tablero ACTUAL tras una operación optimista que falló. Los
+  // rollbacks llamaban a load(), que pasa por ensureBootstrap y carga el
+  // tablero por defecto: con otro workspace abierto, un fallo te mandaba a
+  // otro tablero. Además, si fallan N operaciones seguidas (mover en lote) se
+  // lanzaban N recargas; aquí, mientras hay una en curso, las demás se
+  // descartan (la que está en curso ya trae el estado más reciente).
+  const reloadInFlightRef = useRef<Promise<void> | null>(null);
+  const reloadCurrentBoard = useCallback(() => {
+    if (reloadInFlightRef.current) return;
+    const board = boardRef.current;
+    const reload = board ? loadForBoard(board) : load();
+    reloadInFlightRef.current = reload
+      .catch((err) => console.error("No se pudo resincronizar el tablero tras un fallo:", err))
+      .finally(() => {
+        reloadInFlightRef.current = null;
+      });
+  }, [loadForBoard, load]);
+
   const switchWorkspace = useCallback(
     (target: { boardId: string; workspaceId: string }) => {
       const current = boardRef.current;
@@ -345,11 +363,19 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     if (!board) return;
 
     let debounceTimer: ReturnType<typeof setTimeout> | null = null;
+    // Descarta la respuesta de un refetch ya en vuelo si, mientras llegaba,
+    // se limpió este efecto (cambio de workspace o de board) o arrancó otra
+    // carga completa (loadRequestIdRef cambia en cada loadForBoard). Antes
+    // solo se borraba el temporizador: una respuesta tardía del tablero
+    // anterior pisaba el estado del nuevo.
+    let cancelled = false;
     const scheduleRefetch = () => {
       if (debounceTimer) clearTimeout(debounceTimer);
       debounceTimer = setTimeout(() => {
+        const requestId = loadRequestIdRef.current;
         fetchBoardState(supabase, board)
           .then(({ state: fetched, positions }) => {
+            if (cancelled || requestId !== loadRequestIdRef.current) return;
             positionsRef.current = positions;
             setState(fetched);
           })
@@ -372,6 +398,7 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       .subscribe();
 
     return () => {
+      cancelled = true;
       if (debounceTimer) clearTimeout(debounceTimer);
       supabase.removeChannel(channel);
     };
@@ -396,10 +423,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       moveTaskRemote(supabase, taskId, toColumnId, newPosition).catch((err) => {
         console.error("No se pudo mover la tarea en Supabase (¿falta el permiso task.update?):", err);
         pushToast("No se pudo mover la tarea, se revirtió el cambio.");
-        load(); // revierte el movimiento optimista resincronizando desde la BD
+        reloadCurrentBoard(); // revierte el movimiento optimista resincronizando desde la BD
       });
     },
-    [supabase, load, pushToast]
+    [supabase, reloadCurrentBoard, pushToast]
   );
 
   const addTask = useCallback(
@@ -424,10 +451,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
         .catch((err) => {
           console.error("No se pudo crear la tarea en Supabase (¿falta el permiso task.create?):", err);
           pushToast("No se pudo crear la tarea.");
-          load();
+          reloadCurrentBoard();
         });
     },
-    [supabase, state.columns, load, pushToast]
+    [supabase, state.columns, reloadCurrentBoard, pushToast]
   );
 
   const addColumn = useCallback(
@@ -455,10 +482,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       updateTaskFields(supabase, task).catch((err) => {
         console.error("No se pudo actualizar la tarea en Supabase (¿falta el permiso task.update?):", err);
         pushToast("No se pudo guardar el cambio, se revirtió.");
-        load();
+        reloadCurrentBoard();
       });
     },
-    [supabase, load, pushToast]
+    [supabase, reloadCurrentBoard, pushToast]
   );
 
   const deleteTask = useCallback(
@@ -476,10 +503,10 @@ export function BoardProvider({ children }: { children: ReactNode }) {
       deleteTaskRemote(supabase, taskId).catch((err) => {
         console.error("No se pudo eliminar la tarea en Supabase (¿falta el permiso task.delete?):", err);
         pushToast("No se pudo eliminar la tarea, se restauró.");
-        load();
+        reloadCurrentBoard();
       });
     },
-    [supabase, load, pushToast]
+    [supabase, reloadCurrentBoard, pushToast]
   );
 
   const reset = useCallback(() => {
