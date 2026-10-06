@@ -42,6 +42,7 @@ import {
   nextPosition,
   insertColumn,
 } from "@/lib/supabase/board-repo";
+import { applyTaskMove } from "@/lib/board-move";
 import { fetchMembers, inviteMemberByEmail, type OrgMember } from "@/lib/supabase/members-repo";
 import {
   fetchNotifications,
@@ -109,6 +110,13 @@ export function BoardProvider({ children }: { children: ReactNode }) {
     pathnameRef.current = pathname;
   }, [pathname]);
   const [state, setState] = useState<BoardState>(EMPTY_STATE);
+  // Copia síncrona del último estado: moveTask lee de aquí (y la actualiza al
+  // instante) en vez de calcular dentro de un updater de setState, para que
+  // varios moveTask seguidos (mover en lote) vean el resultado del anterior.
+  const stateRef = useRef<BoardState>(EMPTY_STATE);
+  useEffect(() => {
+    stateRef.current = state;
+  }, [state]);
   const [loading, setLoading] = useState(true);
   const [searchQuery, setSearchQuery] = useState("");
   const [isOwner, setIsOwner] = useState(false);
@@ -371,33 +379,20 @@ export function BoardProvider({ children }: { children: ReactNode }) {
 
   const moveTask = useCallback(
     (taskId: string, toColumnId: string, toIndex: number) => {
-      // El cálculo vive dentro del updater para leer `prev` (estado real al
-      // aplicar el update), no el `state` cerrado en este callback; la
-      // llamada remota se hace fuera para no disparar el side effect dos
-      // veces si React invoca el updater más de una vez (p.ej. StrictMode).
-      let newPosition: number | undefined;
-      setState((prev) => {
-        const columns = prev.columns.map((col) => ({
-          ...col,
-          taskIds: col.taskIds.filter((id) => id !== taskId),
-        }));
-        const target = columns.find((c) => c.id === toColumnId);
-        if (!target) return prev;
-        const clampedIndex = Math.max(0, Math.min(toIndex, target.taskIds.length));
-        target.taskIds.splice(clampedIndex, 0, taskId);
-
-        const prevId = target.taskIds[clampedIndex - 1];
-        const nextId = target.taskIds[clampedIndex + 1];
-        newPosition = nextPosition(
-          prevId ? positionsRef.current[prevId] : undefined,
-          nextId ? positionsRef.current[nextId] : undefined
-        );
-
-        return { ...prev, columns };
-      });
-
-      if (newPosition === undefined) return;
+      // La posición se calcula de forma síncrona con una función pura sobre
+      // stateRef, no dentro de un updater de setState: React solo ejecuta un
+      // updater al instante si no hay otro update pendiente, así que con
+      // varios moveTask seguidos (mover en lote) la posición quedaba
+      // undefined y moveTaskRemote nunca se llamaba (el movimiento se veía en
+      // la UI pero no se guardaba). stateRef y positionsRef se actualizan al
+      // momento para que la siguiente llamada vea el resultado de esta.
+      const result = applyTaskMove(stateRef.current, positionsRef.current, taskId, toColumnId, toIndex);
+      if (!result) return;
+      const { state: nextState, newPosition } = result;
+      stateRef.current = nextState;
       positionsRef.current[taskId] = newPosition;
+      setState(nextState);
+
       moveTaskRemote(supabase, taskId, toColumnId, newPosition).catch((err) => {
         console.error("No se pudo mover la tarea en Supabase (¿falta el permiso task.update?):", err);
         pushToast("No se pudo mover la tarea, se revirtió el cambio.");
