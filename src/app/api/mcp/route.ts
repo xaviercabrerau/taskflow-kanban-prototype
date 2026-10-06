@@ -1,7 +1,13 @@
 import { createClient } from "@supabase/supabase-js";
 import * as Sentry from "@sentry/nextjs";
 import type { Database } from "@/lib/supabase/database.types";
-import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import {
+  checkIpRateLimit,
+  checkRateLimit,
+  deriveIpRateLimitKey,
+  deriveRateLimitKey,
+  getClientIp,
+} from "@/lib/rate-limit";
 
 interface ToolSchemaProperty {
   type: string;
@@ -201,8 +207,17 @@ export async function POST(request: Request) {
   // failure, etc.) reports to Sentry before we fail the JSON-RPC request,
   // rather than surfacing as a bare unhandled 500 with no observability.
   try {
+    // Por IP de confianza primero: el límite por token no frena a quien varía
+    // el token (cada variante es un cubo nuevo) y las peticiones sin token
+    // compartían un único cubo global que cualquiera podía agotar.
+    const clientIp = getClientIp(request);
+    const ipLimit = await checkIpRateLimit(deriveIpRateLimitKey(clientIp));
+    if (!ipLimit.success) {
+      return rpcError(null, -32029, "Rate limit exceeded. Please slow down and try again later.", 429);
+    }
+
     const rateLimitToken = extractToken(request);
-    const rateLimitKey = deriveRateLimitKey(rateLimitToken);
+    const rateLimitKey = deriveRateLimitKey(rateLimitToken, clientIp);
     const rateLimit = await checkRateLimit(rateLimitKey);
     if (!rateLimit.success) {
       return rpcError(null, -32029, "Rate limit exceeded. Please slow down and try again later.", 429);

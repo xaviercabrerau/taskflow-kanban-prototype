@@ -1,6 +1,12 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
-import { checkRateLimit, deriveRateLimitKey } from "@/lib/rate-limit";
+import {
+  checkIpRateLimit,
+  checkRateLimit,
+  deriveIpRateLimitKey,
+  deriveRateLimitKey,
+  getClientIp,
+} from "@/lib/rate-limit";
 
 const MAX_COMMENT_LENGTH = 4000;
 const MAX_GUEST_NAME_LENGTH = 80;
@@ -17,6 +23,16 @@ export async function POST(
   { params }: { params: Promise<{ token: string }> }
 ): Promise<NextResponse> {
   const { token } = await params;
+
+  // Límite por IP de confianza antes del límite por token: el token lo manda
+  // el cliente en la URL, así que variarlo daba un cubo nuevo por petición.
+  const ipLimit = await checkIpRateLimit(deriveIpRateLimitKey(getClientIp(request)));
+  if (!ipLimit.success) {
+    return NextResponse.json(
+      { error: "Demasiadas solicitudes. Intenta de nuevo en unos minutos." },
+      { status: 429 }
+    );
+  }
 
   const rateLimit = await checkRateLimit(deriveRateLimitKey(`public-share-comment:${token}`));
   if (!rateLimit.success) {

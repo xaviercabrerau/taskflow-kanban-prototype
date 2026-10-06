@@ -14,12 +14,12 @@ import { MONITORED_JOBS } from "@/lib/cron-jobs";
 //
 // --- Auth ---
 // Requires `Authorization: Bearer <CRON_SECRET>` matching
-// `process.env.CRON_SECRET`, OR (fallback, checked only when the header is
-// absent) a `?secret=<CRON_SECRET>` query param. The query-param fallback
-// exists because Vercel's own Cron scheduler sends the header automatically
-// when `CRON_SECRET` is set, but many free-tier external uptime monitors
-// (UptimeRobot, Freshping, etc.) cannot send custom headers — only a custom
-// URL. Both paths require an exact match; anything else is a 401.
+// `process.env.CRON_SECRET` — exactly what Vercel's own Cron scheduler sends
+// automatically when `CRON_SECRET` is set. Anything else is a 401. A
+// `?secret=` query-param fallback used to exist for external uptime monitors
+// that cannot send headers; it was removed (finding D of the 2026-10-05
+// review) because URLs end up in access logs and proxy history, and
+// CRON_SECRET also authenticates the other cron routes.
 //
 // --- Cron health via anon client ---
 // `get_cron_health()` was originally granted to `authenticated` only (see
@@ -69,14 +69,13 @@ function isAuthorized(request: Request): boolean {
   const cronSecret = process.env.CRON_SECRET;
   if (!cronSecret) return false;
 
+  // Solo la cabecera. Antes también se aceptaba `?secret=<CRON_SECRET>` para
+  // monitores externos sin cabeceras, pero las URLs quedan en logs de acceso,
+  // historiales de proxies y herramientas de monitoreo, y CRON_SECRET además
+  // autentica el resto de crons: filtrarlo abría más que esta ruta.
   const authHeader = request.headers.get("authorization");
-  if (authHeader) {
-    return timingSafeStringEqual(authHeader, `Bearer ${cronSecret}`);
-  }
-
-  const url = new URL(request.url);
-  const querySecret = url.searchParams.get("secret");
-  return querySecret !== null && timingSafeStringEqual(querySecret, cronSecret);
+  if (!authHeader) return false;
+  return timingSafeStringEqual(authHeader, `Bearer ${cronSecret}`);
 }
 
 async function checkAppHealth(): Promise<string | null> {
