@@ -326,7 +326,7 @@ export default function AutomationsModal({ onClose, embedded = false }: Automati
 
               {triggerKind === "sla_stale" && (
                 <div className="field" style={{ marginTop: 8 }}>
-                  <label htmlFor="trigger-stale-hours">Horas sin moverse (en cualquier columna que no sea "Hecho")</label>
+                  <label htmlFor="trigger-stale-hours">Horas sin moverse (en cualquier columna que no sea &quot;Hecho&quot;)</label>
                   <input
                     id="trigger-stale-hours"
                     type="number"

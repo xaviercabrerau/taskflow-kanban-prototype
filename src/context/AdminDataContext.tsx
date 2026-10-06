@@ -157,15 +157,25 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
     if (loadedKeyRef.current === key) return;
     loadedKeyRef.current = key;
 
+    // Una respuesta que llega cuando ya se cambió de tenant/board/workspace
+    // (loadedKeyRef apunta a otra clave) se descarta: antes cada `.then(setX)`
+    // la aplicaba igual y pisaba reglas, webhooks, roles… del workspace nuevo
+    // con los del anterior si el cambio era rápido.
+    const isCurrent = () => loadedKeyRef.current === key;
+
     fetchAutomationRules(supabase, activeWorkspaceId)
-      .then(setAutomationRules)
+      .then((value) => {
+        if (isCurrent()) setAutomationRules(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar las reglas de automatización:", err);
         pushToast("No se pudieron cargar las reglas de automatización.");
       });
 
     fetchInboundWebhooks(supabase, activeBoardId)
-      .then(setInboundWebhooks)
+      .then((value) => {
+        if (isCurrent()) setInboundWebhooks(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar los webhooks entrantes:", err);
         pushToast("No se pudieron cargar los webhooks entrantes.");
@@ -173,7 +183,9 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
 
     if (userId) {
       fetchMcpSessions(supabase, userId)
-        .then(setMcpSessions)
+        .then((value) => {
+          if (isCurrent()) setMcpSessions(value);
+        })
         .catch((err) => {
           console.error("No se pudieron cargar los tokens MCP:", err);
           pushToast("No se pudieron cargar los tokens MCP.");
@@ -188,28 +200,36 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       });
 
     fetchRoles(supabase, tenantId)
-      .then(setRoles)
+      .then((value) => {
+        if (isCurrent()) setRoles(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar los roles:", err);
         pushToast("No se pudieron cargar los roles.");
       });
 
     fetchMemberRoleIds(supabase, tenantId)
-      .then(setMemberRoleIds)
+      .then((value) => {
+        if (isCurrent()) setMemberRoleIds(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar los roles de los miembros:", err);
         pushToast("No se pudieron cargar los roles de los miembros.");
       });
 
     fetchOrgSettings(supabase, tenantId)
-      .then(setOrgSettings)
+      .then((value) => {
+        if (isCurrent()) setOrgSettings(value);
+      })
       .catch((err) => {
         console.error("No se pudo cargar la configuración de seguridad:", err);
         pushToast("No se pudo cargar la configuración de seguridad.");
       });
 
     fetchAuditLog(supabase, tenantId)
-      .then(setAuditLog)
+      .then((value) => {
+        if (isCurrent()) setAuditLog(value);
+      })
       .catch((err) => {
         console.error("No se pudo cargar el registro de auditoría:", err);
         pushToast("No se pudo cargar el registro de auditoría.");
@@ -223,14 +243,18 @@ export function AdminDataProvider({ children }: { children: ReactNode }) {
       });
 
     fetchOwnTemplates(supabase, tenantId)
-      .then(setOwnTemplates)
+      .then((value) => {
+        if (isCurrent()) setOwnTemplates(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar tus plantillas:", err);
         pushToast("No se pudieron cargar tus plantillas.");
       });
 
     fetchIntegrations(supabase, tenantId)
-      .then(setIntegrations)
+      .then((value) => {
+        if (isCurrent()) setIntegrations(value);
+      })
       .catch((err) => {
         console.error("No se pudieron cargar las integraciones:", err);
         pushToast("No se pudieron cargar las integraciones.");

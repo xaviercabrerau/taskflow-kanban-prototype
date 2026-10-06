@@ -36,7 +36,7 @@ function ResetPasswordForm() {
           <div className="modal-body">
             <p style={{ fontSize: 13.5, marginTop: 0 }}>{message}</p>
             <p style={{ fontSize: 13.5, color: "var(--muted)" }}>
-              Solicita un nuevo link desde la pantalla de inicio de sesión ("¿Olvidaste tu contraseña?").
+              Solicita un nuevo link desde la pantalla de inicio de sesión (&quot;¿Olvidaste tu contraseña?&quot;).
             </p>
           </div>
           <div className="modal-foot">
