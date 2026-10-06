@@ -2,6 +2,8 @@ import { createClient as createServiceClient } from "@supabase/supabase-js";
 import { createClient as createServerSupabase } from "@/lib/supabase/server";
 import type { Database } from "@/lib/supabase/database.types";
 
+const ALLOWED_ROLES = ["admin", "user", "viewer"];
+
 export async function GET(request: Request, { params }: { params: Promise<{ id: string }> }) {
   const { id: userId } = await params;
   const supabase = await createServerSupabase();
@@ -79,6 +81,37 @@ export async function PUT(request: Request, { params }: { params: Promise<{ id: 
 
   if (membershipError || !membership || membership.org_role !== "owner") {
     return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // Valores que envía la interfaz (useUsersData.ts). "viewer" y "user" se
+  // guardan como member; antes cualquier otro valor se convertía en silencio
+  // en member, incluso uno inventado.
+  if (body.role !== undefined && !ALLOWED_ROLES.includes(body.role)) {
+    return Response.json({ error: "Rol inválido: debe ser 'admin', 'user' o 'viewer'." }, { status: 400 });
+  }
+
+  // El usuario destino debe pertenecer a la organización del owner que llama
+  // (mismo patrón que reset-password y que el GET de esta ruta). Sin esto, el
+  // UPDATE de profiles de abajo — que usa service-role y se salta RLS — dejaba
+  // a cualquier owner de cualquier organización renombrar a cualquier usuario
+  // del sistema conociendo su id.
+  const { data: target, error: targetError } = await supabase
+    .from("organization_members")
+    .select("org_role")
+    .eq("user_id", userId)
+    .eq("organization_id", membership.organization_id)
+    .maybeSingle();
+  if (targetError) {
+    return Response.json({ error: targetError.message }, { status: 500 });
+  }
+  if (!target) {
+    return Response.json({ error: "User not found" }, { status: 404 });
+  }
+
+  // Un propietario no se degrada por esta API: así la organización nunca se
+  // queda sin dueño ni un owner puede quitarle el control a otro.
+  if (body.role !== undefined && target.org_role === "owner") {
+    return Response.json({ error: "No se puede cambiar el rol de un propietario." }, { status: 409 });
   }
 
   if (body.name) {
@@ -164,6 +197,26 @@ export async function DELETE(request: Request, { params }: { params: Promise<{ i
 
   if (membershipError || !membership || membership.org_role !== "owner") {
     return Response.json({ error: "Forbidden" }, { status: 403 });
+  }
+
+  // El usuario destino debe pertenecer a esta organización, y un propietario
+  // no se elimina por esta API. Antes solo se comprobaba que no fuera "el
+  // último admin" contando admins y owners juntos: con un owner y un admin se
+  // podía borrar al único owner y la organización quedaba sin dueño.
+  const { data: target, error: targetError } = await supabase
+    .from("organization_members")
+    .select("org_role")
+    .eq("user_id", userId)
+    .eq("organization_id", membership.organization_id)
+    .maybeSingle();
+  if (targetError) {
+    return Response.json({ error: targetError.message }, { status: 500 });
+  }
+  if (!target) {
+    return Response.json({ error: "User not found" }, { status: 404 });
+  }
+  if (target.org_role === "owner") {
+    return Response.json({ error: "No se puede eliminar a un propietario de la organización." }, { status: 409 });
   }
 
   // Check if user is the last admin

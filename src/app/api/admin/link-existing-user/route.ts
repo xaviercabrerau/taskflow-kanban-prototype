@@ -69,7 +69,7 @@ export async function POST(request: Request) {
   }
   const admin = createServiceClient<Database>(supabaseUrl, serviceRoleKey);
 
-  let existingUser: { id: string; user_metadata: Record<string, unknown> } | null = null;
+  let existingUser: { id: string; user_metadata: Record<string, unknown>; email_confirmed_at?: string | null } | null = null;
   for (let page = 1; page <= 20 && !existingUser; page += 1) {
     const { data: pageData, error: listError } = await admin.auth.admin.listUsers({ page, perPage: 200 });
     if (listError) {
@@ -98,17 +98,35 @@ export async function POST(request: Request) {
     return Response.json({ error: message }, { status: 409 });
   }
 
-  const { error: updateError } = await admin.auth.admin.updateUserById(existingUser.id, {
-    email_confirm: true,
-    ...(password ? { password } : {}),
-    user_metadata: {
-      ...existingUser.user_metadata,
-      ...(fullName ? { full_name: fullName } : {}),
-      must_change_password: password ? requirePasswordChange : existingUser.user_metadata?.must_change_password ?? false,
-    },
-  });
-  if (updateError) {
-    return Response.json({ error: updateError.message }, { status: 400 });
+  // Si la cuenta ya tiene el email verificado, su dueño real la usa: ningún
+  // owner debe poder confirmarle nada ni ponerle contraseña. Como crear una
+  // organización está abierto a cualquier usuario autenticado, "ser owner" no
+  // acredita nada, y esto era una toma de cuenta de cualquier cuenta de Auth
+  // sin organización. Las cuentas SIN verificar (el rescate de un alta
+  // abandonada para el que existe esta ruta) siguen como antes.
+  const emailAlreadyVerified = Boolean(existingUser.email_confirmed_at);
+  if (emailAlreadyVerified && password) {
+    return Response.json(
+      {
+        error:
+          "Esa cuenta ya tiene el email verificado y su dueño la usa: no se le puede asignar una contraseña desde aquí. Vuelve a intentarlo sin contraseña para vincularla sin cambiar sus credenciales.",
+      },
+      { status: 409 }
+    );
+  }
+
+  if (!emailAlreadyVerified || fullName) {
+    const { error: updateError } = await admin.auth.admin.updateUserById(existingUser.id, {
+      ...(emailAlreadyVerified ? {} : { email_confirm: true, ...(password ? { password } : {}) }),
+      user_metadata: {
+        ...existingUser.user_metadata,
+        ...(fullName ? { full_name: fullName } : {}),
+        must_change_password: password ? requirePasswordChange : existingUser.user_metadata?.must_change_password ?? false,
+      },
+    });
+    if (updateError) {
+      return Response.json({ error: updateError.message }, { status: 400 });
+    }
   }
 
   const { error: memberError } = await admin
