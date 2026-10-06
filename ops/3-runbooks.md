@@ -394,10 +394,9 @@ To change the budget, edit `REQUESTS_PER_WINDOW` / `WINDOW` in
 
 `/api/cron/alert-check` is the only Vercel cron. It:
 
-1. Authenticates the caller with `CRON_SECRET` — either
-   `Authorization: Bearer <CRON_SECRET>` (what Vercel Cron sends) or
-   `?secret=<CRON_SECRET>` (fallback for uptime monitors that cannot send
-   custom headers). Anything else is 401.
+1. Authenticates the caller with `CRON_SECRET`, only as
+   `Authorization: Bearer <CRON_SECRET>` (what Vercel Cron sends). The old
+   `?secret=` URL fallback was removed. Anything else is 401.
 2. Re-runs the Supabase connectivity check and `get_cron_health()`.
 3. POSTs a message to `ALERT_WEBHOOK_URL` if there are problems. The payload
    carries both `text` and `content` so one implementation works for Slack or
@@ -423,7 +422,7 @@ hourly job, and if `ALERT_WEBHOOK_URL` is unset the alert is only
 tighter detection is wanted: point an external uptime monitor at
 `https://task.conto.ec/api/health` (any frequency — the probe is deliberately
 cheap) and at
-`https://task.conto.ec/api/cron/alert-check?secret=<CRON_SECRET>`.
+`https://task.conto.ec/api/health/cron` (also no secret).
 
 ---
 

@@ -84,8 +84,8 @@ Stated plainly so nobody assumes coverage that isn't there:
 5. **With `ALERT_WEBHOOK_URL` unset,** alerts only reach the function logs.
 
 Cheapest fixes, in order, requiring no new code: point an external uptime
-monitor at `/api/health` (1–5 min), `/` (5 min), `/api/health/cron` (15–60 min)
-and `/api/cron/alert-check?secret=<CRON_SECRET>` (hourly); set
+monitor at `/api/health` (1–5 min), `/` (5 min) and `/api/health/cron`
+(15–60 min) — none needs a secret; set
 `ALERT_WEBHOOK_URL`; enable Sentry alert rules in the Sentry UI.
 
 ---

@@ -168,9 +168,9 @@ curl -s -H "Authorization: Bearer $CRON_SECRET" \
 * Sentry errors do **not** feed this path. A spike of 500s produces no webhook.
 * To tighten detection without new code: point an external uptime monitor at
   `https://task.conto.ec/api/health` (cheap, no auth) and at
-  `https://task.conto.ec/api/cron/alert-check?secret=<CRON_SECRET>` — the
-  query-param form exists precisely for monitors that cannot send custom
-  headers.
+  `https://task.conto.ec/api/health/cron` (also no secret). `/api/cron/alert-check`
+  only accepts `Authorization: Bearer <CRON_SECRET>` now (the `?secret=` URL
+  form was removed), so free-tier monitors cannot call it.
 
 ---
 

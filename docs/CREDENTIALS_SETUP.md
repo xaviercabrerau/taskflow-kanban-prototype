@@ -119,7 +119,7 @@ openssl rand -base64 32
 
 | Variable | Used by |
 |---|---|
-| `CRON_SECRET` | `/api/cron/alert-check`. Vercel Cron sends it as `Authorization: Bearer …`; external monitors that cannot set headers may use `?secret=`. Compared with `timingSafeEqual`. |
+| `CRON_SECRET` | `/api/cron/alert-check`. Vercel Cron sends it as `Authorization: Bearer …`; the old `?secret=` query-param fallback was removed. Compared with `timingSafeEqual`. |
 | `INTERNAL_NOTIFY_SECRET` | `x-internal-secret` header on `/api/internal/notify-event` and `/api/internal/sync-calendar-event`. These are called by Postgres triggers through `pg_net`, never from a browser. |
 | `JWT_SECRET` | Signs and verifies the Google OAuth `state` parameter (`src/lib/google/oauth.ts`). Unrelated to Supabase Auth's own JWTs. |
 
